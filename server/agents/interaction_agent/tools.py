@@ -7,7 +7,8 @@ from typing import Any, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
-from ...services.execution import get_agent_roster, get_execution_agent_logs
+from ...services.execution import get_agent_roster, get_execution_agent_logs, rank_agents
+from ...services.execution.agent_selector import humanize_age
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -37,6 +38,24 @@ TOOL_SCHEMAS = [
                     "instructions": {"type": "string", "description": "Instructions for the agent to execute."},
                 },
                 "required": ["agent_name", "instructions"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_agents",
+            "description": "Search ALL existing execution agents, including ones not listed in <active_agents>. Use this before creating a new agent when the request might continue earlier work (a past email thread, trip, reminder, project) that isn't in the shortlist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Who or what to look for, e.g. 'Alice lunch', 'landlord lease renewal', 'Tokyo flights'.",
+                    },
+                },
+                "required": ["query"],
                 "additionalProperties": False,
             },
         },
@@ -113,11 +132,19 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     """Send instructions to an execution agent."""
     roster = get_agent_roster()
     roster.load()
-    existing_agents = set(roster.get_agents())
-    is_new = agent_name not in existing_agents
+
+    # Duplicate guard: "Email Alice" should reuse "Email to Alice", not spawn a twin
+    # that has none of the thread's history.
+    requested_name = agent_name
+    existing = roster.find_duplicate(agent_name)
+    is_new = existing is None
+    if existing and existing != requested_name:
+        logger.info(f"Merged near-duplicate agent name '{requested_name}' into '{existing}'")
+        agent_name = existing
 
     if is_new:
-        roster.add_agent(agent_name)
+        roster.add_agent(agent_name, instructions)
+    roster.record_request(agent_name, instructions)
 
     get_execution_agent_logs().record_request(agent_name, instructions)
 
@@ -146,7 +173,29 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
             "status": "submitted",
             "agent_name": agent_name,
             "new_agent_created": is_new,
+            **({"merged_from": requested_name} if agent_name != requested_name else {}),
         },
+    )
+
+
+# Let the interaction agent look past the shortlist before spawning a new agent
+def search_agents(query: str, limit: int = 5) -> ToolResult:
+    """Search every execution agent, not just the ones shown this turn."""
+    roster = get_agent_roster()
+    roster.load()
+    ranked = rank_agents(query, roster.get_records())[:limit]
+    matches = [
+        {
+            "agent_name": record.name,
+            "purpose": record.first_task,
+            "latest": record.last_result or record.last_task,
+            "last_used": humanize_age(record),
+        }
+        for record, _score in ranked
+    ]
+    return ToolResult(
+        success=True,
+        payload={"matches": matches, "searched": len(roster.get_agents())},
     )
 
 
@@ -227,6 +276,8 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
 
         if name == "send_message_to_agent":
             return send_message_to_agent(**args)
+        if name == "search_agents":
+            return search_agents(**args)
         if name == "send_message_to_user":
             return send_message_to_user(**args)
         if name == "send_draft":

@@ -1,0 +1,3 @@
+pytest>=8
+# optional, for semantic routing (may not install on very new Python versions):
+# fastembed>=0.4

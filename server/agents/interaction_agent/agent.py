@@ -4,10 +4,14 @@ from html import escape
 from pathlib import Path
 from typing import Dict, List
 
-from ...services.execution import get_agent_roster
+from ...services.execution import get_agent_roster, select_agents
+from ...services.execution.agent_selector import humanize_age
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
 SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
+
+# How much of the recent conversation to use as extra routing context.
+_CONTEXT_CHARS = 600
 
 
 # Load and return the pre-defined system prompt from markdown file
@@ -16,17 +20,17 @@ def build_system_prompt() -> str:
     return SYSTEM_PROMPT
 
 
-# Build structured message with conversation history, active agents, and current turn
+# Build structured message with conversation history, relevant agents, and current turn
 def prepare_message_with_history(
     latest_text: str,
     transcript: str,
     message_type: str = "user",
 ) -> List[Dict[str, str]]:
-    """Compose a message that bundles history, roster, and the latest turn."""
+    """Compose a message that bundles history, the agent shortlist, and the latest turn."""
     sections: List[str] = []
 
     sections.append(_render_conversation_history(transcript))
-    sections.append(f"<active_agents>\n{_render_active_agents()}\n</active_agents>")
+    sections.append(_render_active_agents(latest_text, transcript))
     sections.append(_render_current_turn(latest_text, message_type))
 
     content = "\n\n".join(sections)
@@ -41,21 +45,49 @@ def _render_conversation_history(transcript: str) -> str:
     return f"<conversation_history>\n{history}\n</conversation_history>"
 
 
-# Format currently active execution agents into XML tags for LLM awareness
-def _render_active_agents() -> str:
+def render_agent_list(selection) -> str:
+    """Render a Selection as the <active_agents> block. Shared with the evals."""
+    if not selection.total:
+        return "<active_agents>\nNone\n</active_agents>"
+
+    lines: List[str] = []
+    for record in selection.agents:
+        attrs = [
+            f'name="{escape(record.name, quote=True)}"',
+            f'last_used="{humanize_age(record)}"',
+            f'why_shown="{selection.reasons.get(record.name, "relevant")}"',
+        ]
+        purpose = escape(record.first_task or "", quote=False)
+        latest = escape(record.last_result or record.last_task or "", quote=False)
+        body = purpose
+        if latest and latest != purpose:
+            # Label the snapshot with its age: in testing, a bare "latest: Alice replied"
+            # made the model answer "did she reply?" from this cached line instead of
+            # asking the agent to check again.
+            note = f"last known ({humanize_age(record)}, may be outdated): {latest}"
+            body = f"{purpose} | {note}" if purpose else note
+        lines.append(f"<agent {' '.join(attrs)}>{body}</agent>")
+
+    hidden = selection.total - len(selection.agents)
+    header = (
+        f"<active_agents shown=\"{len(selection.agents)}\" total=\"{selection.total}\">"
+    )
+    footer = ""
+    if hidden > 0:
+        footer = (
+            f"\n<!-- {hidden} older or less relevant agents are hidden. If none of the agents "
+            "above fit and the task might continue earlier work, call search_agents before "
+            "creating a new agent. -->"
+        )
+    return header + "\n" + "\n".join(lines) + footer + "\n</active_agents>"
+
+
+# Pick the agents worth showing this turn instead of dumping the whole roster
+def _render_active_agents(latest_text: str = "", transcript: str = "") -> str:
     roster = get_agent_roster()
     roster.load()
-    agents = roster.get_agents()
-
-    if not agents:
-        return "None"
-
-    rendered: List[str] = []
-    for agent_name in agents:
-        name = escape(agent_name or "agent", quote=True)
-        rendered.append(f'<agent name="{name}" />')
-
-    return "\n".join(rendered)
+    selection = select_agents(latest_text, roster.get_records(), context=transcript[-_CONTEXT_CHARS:])
+    return render_agent_list(selection)
 
 
 # Wrap the current message in appropriate XML tags based on sender type

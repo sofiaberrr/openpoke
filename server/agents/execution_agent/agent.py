@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from ...services.execution import get_execution_agent_logs
+from ...services.execution import get_agent_roster, get_execution_agent_logs
 from ...logging_config import logger
 
 
@@ -114,6 +114,8 @@ class ExecutionAgent:
     def record_response(self, response: str) -> None:
         """Record agent's response to the log."""
         self._log_store.record_agent_response(self.name, response)
+        # keep the roster's "what did this agent last do" snippet fresh for routing
+        get_agent_roster().record_result(self.name, response)
 
     # Log tool invocation and results with truncated content for readability
     def record_tool_execution(self, tool_name: str, arguments: str, result: str) -> None:
