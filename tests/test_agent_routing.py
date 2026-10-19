@@ -114,6 +114,15 @@ def test_rendered_list_tells_model_about_hidden_agents():
     assert "Tokyo trip flights" in text
 
 
+def test_results_are_used_for_ranking_but_never_shown():
+    """Regression test for the bug the LLM eval caught (answering from stale snippets)."""
+    rec = AgentRecord(name="Lunch thread", first_task="Ask about lunch",
+                      last_result="Alice replied Thursday works", last_used_at="2026-10-16T00:00:00+00:00")
+    sel = select_agents("did Alice reply", [rec], now=T, recent=0)
+    assert sel.agents and sel.agents[0].name == "Lunch thread"  # result text helped it match
+    assert "Thursday" not in render_agent_list(sel)               # but the model never sees it
+
+
 # ---------------------------------------------------------------------- tools
 def test_search_agents_tool_finds_hidden_agents(tmp_path, monkeypatch):
     from server.agents.interaction_agent import tools

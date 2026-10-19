@@ -1,0 +1,44 @@
+[
+  {
+    "case": "d1",
+    "category": "direct",
+    "variant": "shortlist",
+    "expected": "Email to Alice Chen re lunch",
+    "routed": "Email to Alice Chen re lunch",
+    "final": "Email to Alice Chen re lunch",
+    "outcome": "correct",
+    "searched": false,
+    "said": "Checking if Alice Chen replied about lunch...",
+    "prompt_tokens": 7898,
+    "calls": 2,
+    "seconds": 13.5
+  },
+  {
+    "case": "d2",
+    "category": "direct",
+    "variant": "shortlist",
+    "expected": "Stripe interview scheduling",
+    "routed": "Stripe interview scheduling",
+    "final": "Stripe interview scheduling",
+    "outcome": "correct",
+    "searched": false,
+    "said": "Let me check your Stripe onsite interview time.",
+    "prompt_tokens": 7463,
+    "calls": 2,
+    "seconds": 13.2
+  },
+  {
+    "case": "f1",
+    "category": "follow_up",
+    "variant": "shortlist",
+    "expected": "Email to Alice Chen re lunch",
+    "routed": "Email to Alice Chen re lunch",
+    "final": "Email to Alice Chen re lunch",
+    "outcome": "correct",
+    "searched": false,
+    "said": "Let me check if Alice Chen has replied to your lunch invite.",
+    "prompt_tokens": 7955,
+    "calls": 2,
+    "seconds": 14.9
+  }
+]

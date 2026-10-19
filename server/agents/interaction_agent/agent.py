@@ -58,14 +58,15 @@ def render_agent_list(selection) -> str:
             f'why_shown="{selection.reasons.get(record.name, "relevant")}"',
         ]
         purpose = escape(record.first_task or "", quote=False)
-        latest = escape(record.last_result or record.last_task or "", quote=False)
+        last_ask = escape(record.last_task or "", quote=False)
+        # Deliberately NOT showing the agent's last result here. In the LLM eval, showing
+        # "Alice replied: Thursday works" made the model answer "did she reply?" straight
+        # from that snippet instead of asking the agent to check. A "may be outdated"
+        # label and a prompt rule did not stop it, so the snippet is now used only for
+        # ranking (it is still part of AgentRecord.search_text) and never shown.
         body = purpose
-        if latest and latest != purpose:
-            # Label the snapshot with its age: in testing, a bare "latest: Alice replied"
-            # made the model answer "did she reply?" from this cached line instead of
-            # asking the agent to check again.
-            note = f"last known ({humanize_age(record)}, may be outdated): {latest}"
-            body = f"{purpose} | {note}" if purpose else note
+        if last_ask and last_ask != purpose:
+            body = f"{purpose} | last asked: {last_ask}" if purpose else f"last asked: {last_ask}"
         lines.append(f"<agent {' '.join(attrs)}>{body}</agent>")
 
     hidden = selection.total - len(selection.agents)
