@@ -1,0 +1,16 @@
+[
+  {
+    "case": "x2",
+    "category": "distractor",
+    "variant": "shortlist",
+    "expected": "Email to Alice Chen re lunch",
+    "routed": "Email to Alice Chen re lunch",
+    "final": "Email to Alice Chen re lunch",
+    "outcome": "correct",
+    "searched": false,
+    "said": "",
+    "prompt_tokens": 3935,
+    "calls": 1,
+    "seconds": 3.7
+  }
+]

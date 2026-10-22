@@ -123,8 +123,14 @@ The cause: I had put each agent's last result in its description ("Alice replied
 | 1 | shortlist (snippets shown) | 6 / 10 | 4 answered from snippet |
 | 2 | shortlist (snippets labelled stale) | 4 / 8 | still answered from snippet |
 | 3 | shortlist (snippets hidden) | **3 / 3** | the 3 cases that kept failing |
+| 4 | original (second model) | 12 / 12 | |
+| 4 | shortlist, final code (second model) | **12 / 12** | x2 retried once, see below |
 
-Prompt size per call at 300 agents: ~15.8k tokens for the original vs ~7.8k for the shortlist. The saving is smaller than the agent list alone suggests, because the system prompt and tool definitions are a fixed cost.
+**Run 4: full rerun on the final code, with a second model.** Runs 1 to 3 used an earlier version of the code, and run 3 only covered three cases. The first model stopped working on OpenRouter, so I reran all 12 cases for both variants on `nvidia/nemotron-3-ultra-550b-a55b:free`. This covers archiving and the `search_agents` fix (fix 5 is inside execution agents, which this eval doesn't exercise). Both variants got **12 of 12**, with no duplicates or wrong agents, and d1, d2 and f1 all passed. The shortlist used about **35% fewer prompt tokens** (~4.5k vs ~7.0k per call) and was slightly faster. One shortlist case (x2) first came back as `no_route` with 0 prompt tokens in 0.5 seconds, meaning the provider returned an empty response before the model read anything; rerunning it gave the correct agent. Results are in `evals/results/llm_nvidia-nemotron-3-ultra-550b-a55b-free_300_final.json` and `..._x2retry.json`.
+
+What this says honestly: at 300 agents, this stronger model routes fine even with the full roster, so here the shortlist's win is cost and latency rather than accuracy. The original's cost keeps growing with the roster (the agent list alone is ~13k tokens at 1,000 agents), while the shortlist stays flat. Token counts differ between the two models because they count tokens differently, so compare within a run, not across runs.
+
+Prompt size per call at 300 agents (run 1 model): ~15.8k tokens for the original vs ~7.8k for the shortlist. The saving is smaller than the agent list alone suggests, because the system prompt and tool definitions are a fixed cost.
 
 Other things these runs showed:
 - **No duplicates and no wrong agents in either variant.** The model was good at not reusing the wrong agent; its failure mode was not routing at all.
@@ -135,10 +141,10 @@ Other things these runs showed:
 
 ## Limitations and what I'd do next
 
-- **Small LLM eval.** A handful of cases on one free model, limited by the free tier. Needs more cases, repeated runs and a second model before trusting the percentages.
+- **Small LLM eval.** 12 cases, one run each, on two free models, limited by the free tier. Needs all 40 cases and several runs per case before trusting the percentages, and a run at 1,000 agents, where the original should start to struggle.
 - **My test cases were written by the same person who wrote the selector.** That's a real bias. Next step: sample real (anonymized) user messages and label them, or have a second person write cases blind.
 - **Keyword matching can't do pure paraphrase.** Embeddings help, but the real backstop is `search_agents`, which depends on the model deciding to call it.
-- **The LLM eval ran before fixes 5 to 7.** Fix 6 is covered by the retrieval eval and unit tests, and fix 5 by unit tests, but neither has been run end to end against a real model yet.
+- **Fix 5 (execution-agent history) has no end-to-end test.** The LLM eval only exercises the interaction agent's routing, so the history change is covered by unit tests only. A next step would be an eval where an execution agent has to recall something from an old, condensed request.
 - **Condensed history can lose detail.** A one-line digest drops old tool output, so a request like "forward the attachment from that email in March" might need the agent to search again. That's the trade-off for a bounded prompt; an LLM-written summary would keep more but costs a call.
 - **The roster file still grows.** Archiving bounds what the model sees, not what's on disk. At real-world sizes that's a few hundred KB, so I left it; past that, archived records could move to a separate file.
 - **Agent descriptions are raw instruction snippets.** A one-line LLM-written summary per agent (on a cheap model, only when the agent changes) would rank better than the first 200 characters of its instructions.
