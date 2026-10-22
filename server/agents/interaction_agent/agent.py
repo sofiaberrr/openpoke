@@ -75,8 +75,9 @@ def render_agent_list(selection) -> str:
     )
     footer = ""
     if hidden > 0:
+        archived_note = f" ({selection.archived} archived: unused for months)" if selection.archived else ""
         footer = (
-            f"\n<!-- {hidden} older or less relevant agents are hidden. If none of the agents "
+            f"\n<!-- {hidden} older or less relevant agents are hidden{archived_note}. If none of the agents "
             "above fit and the task might continue earlier work, call search_agents before "
             "creating a new agent. -->"
         )

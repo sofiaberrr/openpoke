@@ -38,6 +38,10 @@ from ...logging_config import logger
 DEFAULT_TOP_K = int(os.getenv("OPENPOKE_ROUTER_TOP_K", "8"))
 DEFAULT_RECENT = int(os.getenv("OPENPOKE_ROUTER_RECENT", "3"))
 RECENCY_HALF_LIFE_DAYS = 14.0
+# Agents unused for this long are "archived": they only make the shortlist on a strong
+# match, so weak matches from months ago stop taking slots. 0 turns archiving off.
+ARCHIVE_AFTER_DAYS = float(os.getenv("OPENPOKE_ROUTER_ARCHIVE_DAYS", "60"))
+ARCHIVED_MIN_SCORE = 0.5
 
 _STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "can", "could", "did", "do", "does", "for",
@@ -139,6 +143,16 @@ class Selection:
     total: int                         # size of the full roster
     reasons: Dict[str, str]            # agent name -> "relevant" / "recent"
     scores: Dict[str, float]
+    archived: int = 0                  # how many agents in the roster are archived
+
+
+def is_archived(record: AgentRecord, now: Optional[float] = None, after_days: float = ARCHIVE_AFTER_DAYS) -> bool:
+    """Archived = not used for `after_days`. Derived from last_used_at, so using an
+    agent again un-archives it automatically and nothing extra is stored."""
+    if after_days <= 0 or not record.last_used_ts():
+        return False
+    now = time.time() if now is None else now
+    return (now - record.last_used_ts()) / 86400.0 >= after_days
 
 
 def _recency(record: AgentRecord, now: float) -> float:
@@ -199,9 +213,14 @@ def select_agents(
     recent: int = DEFAULT_RECENT,
     now: Optional[float] = None,
     use_semantic: Optional[bool] = None,
+    archive_after_days: float = ARCHIVE_AFTER_DAYS,
 ) -> Selection:
     """Build the shortlist the interaction agent sees this turn."""
+    now = time.time() if now is None else now
     ranked = rank_agents(query, records, context=context, now=now, use_semantic=use_semantic)
+    archived = {r.name for r in records if is_archived(r, now, archive_after_days)}
+    # archived agents still compete, but only on a strong match
+    ranked = [(r, s) for r, s in ranked if r.name not in archived or s >= ARCHIVED_MIN_SCORE]
     chosen: List[AgentRecord] = []
     reasons: Dict[str, str] = {}
     scores: Dict[str, float] = {}
@@ -217,7 +236,8 @@ def select_agents(
             chosen.append(record)
             reasons[record.name] = "recent"
 
-    return Selection(agents=chosen, total=len(records), reasons=reasons, scores=scores)
+    return Selection(agents=chosen, total=len(records), reasons=reasons, scores=scores,
+                     archived=len(archived))
 
 
 def humanize_age(record: AgentRecord, now: Optional[float] = None) -> str:

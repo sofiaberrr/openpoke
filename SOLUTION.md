@@ -34,6 +34,24 @@ Capping the list can't make an agent permanently invisible. The prompt says how 
 **4. Duplicate guard** (`send_message_to_agent`)
 Before creating an agent, the name is normalized (case, word order, filler words like "to"/"re") and lightly typo-matched. `"Email Alice"`, `"alice email"` and `"Email to Alcie"` all reuse `"Email to Alice"`. It's deliberately conservative: `"Bob"` vs `"Rob"` and `"Email to Alice"` vs `"Email to Alice re budget"` stay separate, because merging two different threads is worse than one extra agent.
 
+## Other gaps I found and fixed
+
+**5. Execution agents had the same overload problem, one level down** (`server/agents/execution_agent/agent.py`)
+Every execution agent pasted its *entire* log into its own prompt on every call (`conversation_limit` defaulted to `None`, so the existing cut-off was never used). A long-lived agent like "Nightly email summary" grows forever, and most of that bulk is old tool output (full email search results). Now each agent sees its **last 6 requests in full**, and older requests are **condensed to one line each** ("asked: … -> replied: …", tool output dropped), with only the last 20 of those kept and the rest counted. No LLM call is needed to condense, so it's free and deterministic. With ~500 characters of tool output per request:
+
+| requests in history | before (tokens) | after (tokens) |
+|---:|---:|---:|
+| 10 | ~2,100 | ~1,400 |
+| 100 | ~21,000 | ~1,800 |
+| 365 (a year of nightly runs) | ~77,000 | ~1,800 |
+
+`OPENPOKE_EXEC_HISTORY_TURNS` sets how many requests stay in full (`0` = the old behaviour).
+
+**6. Stale agents stop taking shortlist slots** (`agent_selector.py`)
+Agents unused for 60+ days count as **archived**. They aren't deleted or moved, and `search_agents` still finds them. They just need a **strong match** to make the shortlist, so a weak keyword overlap with something from months ago doesn't push out a current agent. Archived is worked out from `last_used_at`, so using an agent again un-archives it automatically and nothing extra is stored. The retrieval eval is unchanged with this on (still 89% at 1,000 agents, including old anchors like "GitHub security alert" at 90 days), so it trims without hiding the agents people actually ask about. `OPENPOKE_ROUTER_ARCHIVE_DAYS` sets the cutoff (`0` = off).
+
+**7. `search_agents` was leaking old results too.** After hiding result snippets from the shortlist (see the LLM eval), I noticed the search tool still returned each agent's last result, which could cause the same "answer from stale text" failure. It now returns what the agent was last *asked* instead, plus an `archived` flag.
+
 ## How I tested it
 
 ### Test data
@@ -51,7 +69,7 @@ Before creating an agent, the name is normalized (case, word order, filler words
 | new_task | "Email Carla about the hackathon" | should create a new agent, not reuse one |
 
 ### 1. Unit tests (`tests/`, `python -m pytest -q`)
-20 tests: old roster format upgrades, records update on use, the duplicate guard (including the cases it must *not* merge), shortlist size stays bounded at 1,000 agents, the right Alice wins, follow-ups use context, recency breaks ties, `search_agents` finds hidden agents, the LLM eval harness grades correctly against a scripted fake model, and a regression test that result snippets are never shown to the model.
+30 tests. The original 20: old roster format upgrades, records update on use, the duplicate guard (including the cases it must *not* merge), shortlist size stays bounded at 1,000 agents, the right Alice wins, follow-ups use context, recency breaks ties, `search_agents` finds hidden agents, the LLM eval harness grades correctly against a scripted fake model, and a regression test that result snippets are never shown to the model. 10 more for the extra gaps (`tests/test_history_and_archive.py`): short histories are unchanged, old requests are condensed while recent ones stay in full, history size stays bounded from 10 to 1,000 requests, condensed lines drop tool output, archiving is derived from last use (and can be turned off), an old agent still wins on a strong match, weak old matches stop taking slots, the prompt mentions archived agents, and `search_agents` never returns old results.
 
 ### 2. Retrieval eval (`python -m evals.retrieval_eval`, no API calls)
 Is the correct agent in what the model sees, and what does it cost?
@@ -107,8 +125,9 @@ Other things these runs showed:
 - **Small LLM eval.** A handful of cases on one free model, limited by the free tier. Needs more cases, repeated runs and a second model before trusting the percentages.
 - **My test cases were written by the same person who wrote the selector.** That's a real bias. Next step: sample real (anonymized) user messages and label them, or have a second person write cases blind.
 - **Keyword matching can't do pure paraphrase.** Embeddings help, but the real backstop is `search_agents`, which depends on the model deciding to call it.
-- **Execution agents also overload.** Each execution agent loads its *entire* history into its own prompt (`conversation_limit` defaults to `None`). Long-lived agents like "Nightly email summary" grow forever. Same idea applies: summarize old history and keep the recent part.
-- **No cleanup.** The prompt is now bounded, but the roster file still grows. Agents untouched for months could be archived (still searchable, never shown by default).
+- **The LLM eval ran before fixes 5 to 7.** Fix 6 is covered by the retrieval eval and unit tests, and fix 5 by unit tests, but neither has been run end to end against a real model yet.
+- **Condensed history can lose detail.** A one-line digest drops old tool output, so a request like "forward the attachment from that email in March" might need the agent to search again. That's the trade-off for a bounded prompt; an LLM-written summary would keep more but costs a call.
+- **The roster file still grows.** Archiving bounds what the model sees, not what's on disk. At real-world sizes that's a few hundred KB, so I left it; past that, archived records could move to a separate file.
 - **Agent descriptions are raw instruction snippets.** A one-line LLM-written summary per agent (on a cheap model, only when the agent changes) would rank better than the first 200 characters of its instructions.
 
 ## Running it
@@ -121,4 +140,4 @@ python -m evals.retrieval_eval      # retrieval eval, no API key needed
 python -m evals.llm_eval            # LLM eval, needs OPENROUTER_API_KEY in .env
 ```
 
-Tuning knobs (env vars): `OPENPOKE_ROUTER_TOP_K` (default 8), `OPENPOKE_ROUTER_RECENT` (default 3), `OPENPOKE_SEMANTIC_ROUTING=0` to turn off embeddings.
+Tuning knobs (env vars): `OPENPOKE_ROUTER_TOP_K` (default 8), `OPENPOKE_ROUTER_RECENT` (default 3), `OPENPOKE_SEMANTIC_ROUTING=0` to turn off embeddings, `OPENPOKE_ROUTER_ARCHIVE_DAYS` (default 60, `0` = off), `OPENPOKE_EXEC_HISTORY_TURNS` (default 6, `0` = full history).

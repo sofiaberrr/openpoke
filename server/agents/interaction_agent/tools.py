@@ -8,7 +8,7 @@ from typing import Any, Optional
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import get_agent_roster, get_execution_agent_logs, rank_agents
-from ...services.execution.agent_selector import humanize_age
+from ...services.execution.agent_selector import humanize_age, is_archived
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -183,13 +183,16 @@ def search_agents(query: str, limit: int = 5) -> ToolResult:
     """Search every execution agent, not just the ones shown this turn."""
     roster = get_agent_roster()
     roster.load()
-    ranked = rank_agents(query, roster.get_records())[:limit]
+    ranked = rank_agents(query, roster.get_records())[:limit]  # searches archived agents too
     matches = [
         {
             "agent_name": record.name,
             "purpose": record.first_task,
-            "latest": record.last_result or record.last_task,
+            # last_task, not last_result: showing old results made the model answer
+            # status questions from stale text instead of asking the agent (see SOLUTION.md)
+            "last_asked": record.last_task,
             "last_used": humanize_age(record),
+            **({"archived": True} if is_archived(record) else {}),
         }
         for record, _score in ranked
     ]
