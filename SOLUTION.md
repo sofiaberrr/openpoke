@@ -16,6 +16,19 @@ That breaks down in three ways as the roster grows:
 2. **Worse routing.** A name is all the model has to go on. "Email to Alice" doesn't say *which* Alice or *what* it was about, and with hundreds of entries the right one is easy to miss.
 3. **Duplicates.** Reuse only happens on an exact string match, so `"Email Alice"` creates a brand new agent next to `"Email to Alice"`, with none of the thread's history. Duplicates make the roster grow even faster.
 
+## How I thought about it
+
+Agent overload is really a context-budget problem: anything that grows with usage (agents, history, memories) and gets pasted into a prompt on every call will eventually cost too much and bury the useful part. That happens here at two levels: the interaction agent's roster, and each execution agent's own history. So the question I kept asking was **"what does the model need to see on this turn?"**, not "how do we have fewer agents?"
+
+Options I considered:
+
+- **Delete or expire old agents.** Simplest, but it throws away thread history, and the next "did Alice ever reply?" would start from nothing. I went with archiving (hidden by default, still searchable) instead.
+- **Merge similar agents into one.** Saves space, but a wrong merge mixes two people's threads, which is worse than one extra agent. I only merge obvious name duplicates, and conservatively.
+- **Show only the most recent agents.** Cheap, but my eval shows it finds the right agent 3% of the time at 1,000 agents.
+- **Ask a cheap LLM to pick the relevant agents first.** Probably the most accurate, but it adds a model call and latency to every message. Keyword + optional embedding ranking is free and fast, and the model can still search if the shortlist misses.
+
+The approach I took: rank by relevance, show a small shortlist, keep everything reachable through search, and measure whether the right agent actually gets used.
+
 ## The fix
 
 **1. Give each agent a record, not just a name** (`server/services/execution/roster.py`)
