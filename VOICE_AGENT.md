@@ -10,7 +10,7 @@ pip install -r server/requirements.txt          # once
 # Optional natural voice: OPENAI_API_KEY in .env (OpenAI gpt-4o-mini-tts, streamed). Without it, the browser voice is used.
 python -m uvicorn server.voice_intake.app:app --port 8001
 ```
-Open **http://localhost:8001/voice in Chrome**, click **Start call**, and talk. Use headphones so the mic doesn't hear the agent. You can also type in the box.
+Open **http://localhost:8001/voice in Chrome**, click **Start call**, then **hold Space (or the Talk button) while you speak** and let go to send. Push-to-talk means background conversations are never picked up; pressing while the agent talks interrupts it. You can also type in the box.
 
 - Tests (no API key needed): `python -m pytest -q`
 - Scripted scenarios against the real model: `python -m evals.voice_scenarios`
@@ -19,7 +19,7 @@ Open **http://localhost:8001/voice in Chrome**, click **Start call**, and talk. 
 ## The flow
 
 ```
-caller speaks -> browser speech-to-text -> POST /api/v1/voice/turn
+caller holds Space + speaks -> browser speech-to-text -> (release) POST /api/v1/voice/turn
    1. stage is emergency/handoff?  -> fixed reply, never goes back to booking
    2. SAFETY SCREEN (plain code)   -> emergency: "call 911", stop | crisis: 911/988 + human | "real person": human
    3. LLM turn, with only the tools that make sense right now

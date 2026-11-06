@@ -23,6 +23,8 @@
   .caller { background:#ecfdf5; align-self:flex-end; }
   .interim { opacity:.55; font-style:italic; }
   .sys { align-self:center; font-size:12px; color:var(--muted); }
+  #talkBtn { width:100%; margin-top:12px; padding:14px; font-size:16px; background:#eef2ff; color:var(--accent); border:2px solid var(--accent); }
+  #talkBtn.on { background:var(--green); border-color:var(--green); color:#fff; }
   #inputRow { display:flex; gap:8px; margin-top:12px; }
   #textIn { flex:1; padding:9px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
   #status { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:8px; }
@@ -54,10 +56,9 @@
   <h1>🩺 Maple Family Clinic · Voice Intake Agent</h1>
   <div id="status"><span class="dot" id="dot"></span><span id="statusText">Idle</span></div>
   <label class="toggle"><input type="checkbox" id="failToggle"> Simulate tool failure</label>
-  <!-- settings are fixed for the demo (hidden): voice on, natural voice "nova", interruptions on -->
+  <!-- settings are fixed for the demo (hidden): voice on, natural voice "nova" -->
   <input type="checkbox" id="voiceToggle" checked hidden>
   <input type="checkbox" id="naturalToggle" checked hidden>
-  <input type="checkbox" id="bargeToggle" checked hidden>
   <input id="voicePick" value="nova" hidden>
   <button id="startBtn">📞 Start call</button>
   <button id="endBtn" class="secondary" disabled>Hang up</button>
@@ -67,6 +68,7 @@
   <section class="card">
     <div id="banner"></div>
     <div id="transcript"></div>
+    <button id="talkBtn" disabled>🎙 Hold to talk (or hold Space)</button>
     <div id="inputRow">
       <input id="textIn" placeholder="Speak, or type here and press Enter" disabled>
       <button id="sendBtn" class="secondary" disabled>Send</button>
@@ -95,8 +97,7 @@ const STAGES = ["identify", "intake", "schedule", "confirm", "booked", "emergenc
 const $ = (id) => document.getElementById(id);
 
 let sessionId = null, callActive = false, speaking = false, waiting = false;
-let pending = "", sendTimer = null, currentUtterance = "", interimEl = null;
-const END_OF_TURN_MS = 650;   // silence after a final result before we send the turn
+let pending = "", currentUtterance = "", interimEl = null;
 
 // ---------------- UI helpers
 function setStatus(kind, text) { $("dot").className = "dot " + kind; $("statusText").textContent = text; }
@@ -149,12 +150,10 @@ function pickVoice() {
 let audio = null;
 function startedSpeaking(text) {
   currentUtterance = text.toLowerCase();
-  speakStartedAt = performance.now();
   speaking = true; setStatus("speaking", "Agent speaking (talk to interrupt)");
 }
 function doneSpeaking(onDone) {
   speaking = false; currentUtterance = ""; audio = null;
-  if (callActive) setStatus("listening", "Listening…");
   onDone && onDone();
 }
 function stopSpeaking() {
@@ -185,58 +184,59 @@ function speak(text, onDone) {
   startedSpeaking(text);
   a.play().catch(fallback);
 }
-let speakStartedAt = 0;
-function bargeIn(heard) {
-  // Background noise and the agent's own voice (echo) shouldn't count as an interruption.
-  // Only interrupt when: interrupting is on, the agent has been talking > 0.8s,
-  // the caller said 3+ words, and most of those words aren't what the agent is saying.
-  if (!$("bargeToggle").checked) return false;
-  if (performance.now() - speakStartedAt < 800) return false;
-  const words = heard.toLowerCase().replace(/[^a-z0-9' ]/g, "").trim().split(/\s+/).filter(Boolean);
-  if (words.length < 3) return false;
-  const agentWords = new Set(currentUtterance.replace(/[^a-z0-9' ]/g, "").split(/\s+/));
-  const fresh = words.filter(w => !agentWords.has(w)).length / words.length;
-  if (fresh < 0.6) return false;
-  stopSpeaking();
-  addMsg("sys", "↩ caller interrupted");
-  setStatus("listening", "Listening…");
-  return true;
-}
-
-// ---------------- speech to text
+// ---------------- speech to text: PUSH-TO-TALK
+// The mic only listens while the caller holds Space (or the Talk button), so background
+// conversations are never picked up. Releasing sends the turn right away (no silence timer).
+// Pressing while the agent is talking interrupts it.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, micBlocked = false;
-function startRecognition() {
+let rec = null, micBlocked = false, holding = false, lastInterim = "";
+function talkReady() { if (callActive && !holding && !speaking) setStatus("", "Hold Space (or the Talk button) to speak"); }
+function holdStart() {
+  if (!callActive || holding) return;
   if (!SR) { addMsg("sys", "Speech recognition isn't supported in this browser. Use Chrome, or type below."); return; }
+  holding = true;
+  if (speaking) { stopSpeaking(); addMsg("sys", "↩ caller interrupted"); }
+  pending = ""; lastInterim = "";
+  $("talkBtn").classList.add("on");
+  setStatus("listening", "Listening… release to send");
   rec = new SR(); rec.lang = "en-CA"; rec.continuous = true; rec.interimResults = true;
   rec.onresult = (e) => {
-    let interim = "", finals = "";
+    let interim = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
-      if (r.isFinal) { finals += " " + r[0].transcript; } else { interim += r[0].transcript; }
+      if (r.isFinal) pending += " " + r[0].transcript; else interim += r[0].transcript;
     }
-    if (speaking) {
-      // While the agent talks, ignore what the mic hears unless it's a real interruption.
-      if (!bargeIn((finals + " " + interim).trim())) return;
-    }
-    pending += finals;
+    lastInterim = interim;
     showInterim((pending + " " + interim).trim());
-    clearTimeout(sendTimer);
-    if (pending.trim() && !interim) sendTimer = setTimeout(flush, END_OF_TURN_MS);
   };
-  rec.onend = () => { if (callActive && !micBlocked) { try { rec.start(); } catch (_) {} } };
   rec.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       if (!micBlocked) addMsg("sys", "Microphone blocked. Allow mic access, or type below.");
       micBlocked = true;
     }
   };
+  rec.onend = () => {            // fires after release, once the last words are recognized
+    const text = (pending + " " + lastInterim).trim();
+    pending = ""; lastInterim = ""; clearInterim();
+    if (text) sendTurn(text); else talkReady();
+  };
   try { rec.start(); } catch (_) {}
 }
-function flush() {
-  const text = pending.trim(); pending = ""; clearInterim();
-  if (text) sendTurn(text);
+function holdEnd() {
+  if (!holding) return;
+  holding = false;
+  $("talkBtn").classList.remove("on");
+  setStatus("thinking", "Thinking…");
+  try { rec.stop(); } catch (_) {}
 }
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || e.repeat || e.target === $("textIn")) return;
+  e.preventDefault(); holdStart();
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code !== "Space" || e.target === $("textIn")) return;
+  e.preventDefault(); holdEnd();
+});
 
 // ---------------- server calls
 async function startCall() {
@@ -246,7 +246,8 @@ async function startCall() {
   $("startBtn").disabled = true; $("endBtn").disabled = false; $("textIn").disabled = false; $("sendBtn").disabled = false;
   if ($("failToggle").checked) await setFailure(true);
   renderState(r.state); addMsg("agent", r.reply);
-  startRecognition(); speak(r.reply);
+  $("talkBtn").disabled = false;
+  speak(r.reply, talkReady);
 }
 async function sendTurn(text) {
   if (!callActive || !text) return;
@@ -265,7 +266,7 @@ async function sendTurn(text) {
   addMsg("agent", r.reply);
   if (r.state) renderState(r.state);
   addMsg("sys", `round trip ${total} ms`);
-  speak(r.reply, () => { if (r.end_call) endCall(true); });
+  speak(r.reply, () => { if (r.end_call) endCall(true); else talkReady(); });
 }
 async function setFailure(on) {
   if (!sessionId) return;
@@ -273,13 +274,19 @@ async function setFailure(on) {
     body: JSON.stringify({ session_id: sessionId, on }) });
 }
 function endCall(auto) {
-  callActive = false; if (rec) { try { rec.stop(); } catch (_) {} }
+  callActive = false; holding = false; $("talkBtn").disabled = true; $("talkBtn").classList.remove("on");
+  if (rec) { rec.onend = null; try { rec.stop(); } catch (_) {} }
   if (!auto) stopSpeaking();
   setStatus("", "Call ended"); addMsg("sys", "Call ended");
   $("startBtn").disabled = false; $("endBtn").disabled = true; $("textIn").disabled = true; $("sendBtn").disabled = true;
 }
 
 $("startBtn").onclick = startCall;
+$("talkBtn").addEventListener("mousedown", holdStart);
+$("talkBtn").addEventListener("mouseup", holdEnd);
+$("talkBtn").addEventListener("mouseleave", holdEnd);
+$("talkBtn").addEventListener("touchstart", (e) => { e.preventDefault(); holdStart(); });
+$("talkBtn").addEventListener("touchend", (e) => { e.preventDefault(); holdEnd(); });
 $("endBtn").onclick = () => endCall(false);
 $("failToggle").onchange = (e) => setFailure(e.target.checked);
 $("sendBtn").onclick = () => { const t = $("textIn").value; $("textIn").value = ""; sendTurn(t); };
