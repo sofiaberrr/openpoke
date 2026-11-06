@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Any, Awaitable, Callable, Dict, List
 
@@ -24,6 +25,9 @@ HANDOFF_SCRIPT = ("Of course. I'm connecting you with someone at the front desk 
                   "what you've told me so you don't have to repeat yourself.")
 FAILURE_SCRIPT = ("Sorry, I'm having trouble with our system right now. I'm going to connect you with "
                   "someone at the front desk who can help.")
+
+# If the model *says* it's transferring but forgot to call the tool, we still transfer.
+PROMISED_TRANSFER = re.compile(r"\b(transfer(ring)?|connect(ing)?) you\b|\bput you through\b", re.I)
 
 LLMFn = Callable[..., Awaitable[Dict[str, Any]]]
 
@@ -94,6 +98,9 @@ async def handle_turn(state: S.CallState, caller_text: str, llm: LLMFn = _defaul
                 text = (msg.get("content") or "").strip()
                 if not text:
                     raise RuntimeError("empty model reply")
+                if PROMISED_TRANSFER.search(text):
+                    T.transfer_to_human(state, "assistant offered a transfer")
+                    state.log("guard", result="model promised transfer without the tool; transferred")
                 return _reply(state, text, started)
 
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})

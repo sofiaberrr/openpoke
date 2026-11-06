@@ -197,3 +197,10 @@ def test_caller_can_keep_number_on_file():
     st = S.new_session()
     T.lookup_patient(st, "Maria Lopez", "1985-03-12")
     assert T.save_callback_number(st, use_number_on_file=True)["saved"] == "416-555-0134"
+
+
+def test_promised_transfer_without_tool_still_transfers():
+    st = S.new_session()
+    out = turn(st, "I'm calling about my test results",
+               scripted(say("I can't help with test results. Let me transfer you to someone who can.")))
+    assert st.stage == S.HANDOFF and out["end_call"]
