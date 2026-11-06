@@ -27,7 +27,7 @@ EMERGENCY_PATTERNS = {
 }
 
 # Mental-health crisis: tell them 988 / 911 and get a human on the line.
-CRISIS_PATTERNS = r"suicid|kill myself|end my life|want to die|hurt myself|self[- ]harm"
+CRISIS_PATTERNS = r"suicid|kill(ing)? myself|end(ing)? (my life|it all)|want(ing)? to die|hurt(ing)? myself|self[- ]harm"
 
 # Caller explicitly wants a person.
 HANDOFF_PATTERNS = r"\b(human|real person|a person|someone real|receptionist|front desk|operator|talk to (a|the) (nurse|doctor|staff))\b|\b(speak|talk) to (an? )?agent\b"

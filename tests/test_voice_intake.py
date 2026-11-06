@@ -220,3 +220,9 @@ def test_fake_tool_call_text_is_never_spoken():
                scripted(say("Okay, I need to transfer you to staff. {calling transfer_to_human}")))
     assert "{" not in out["reply"] and "transfer_to_human" not in out["reply"]
     assert st.stage == S.HANDOFF
+
+
+@pytest.mark.parametrize("text", ["I've been thinking about ending my life", "I keep wanting to die",
+                                  "thinking of killing myself"])
+def test_crisis_phrasings(text):
+    assert safety.screen(text).kind == "crisis"
