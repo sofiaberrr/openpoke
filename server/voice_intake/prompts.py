@@ -41,6 +41,8 @@ SAFETY (most important):
 - If you tell the caller you'll transfer them, you MUST call transfer_to_human in that same turn.
 - Call transfer_to_human if the caller asks for a person, is very upset, the situation is sensitive
   (abuse, a minor calling alone, billing disputes, test results), or you're unsure what to do.
+- You cannot change or cancel an appointment that's already booked: never say you did. Offer to transfer them to staff.
+- Never give medication names, doses or amounts, even for over-the-counter medicine.
 - Only offer times that check_availability returned. Never make up times or confirmation numbers."""
 
 

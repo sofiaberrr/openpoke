@@ -247,3 +247,78 @@ def test_cut_off_numbers_are_never_guessed():
     st.transcript.append({"role": "caller", "text": "sorry, July 20th 1990, and 416 997 8569"})
     assert T.lookup_patient(st, "Arthur Chen", "1990-07-20")["ok"]
     assert T.save_callback_number(st, "416-997-8569")["ok"]
+
+
+# ------------------------------------------------------------------ edge cases found by probing the rules
+@pytest.mark.parametrize("text", [
+    "I can barely breathe", "my chest feels really tight", "my dad collapsed", "he's not responding",
+    "my dad isn't responding", "my lips are swelling up", "I'm pregnant and I'm bleeding",
+    "I can't feel the left side of my face", "I'm gasping for air", "my chest pains are back",
+])
+def test_more_emergency_phrasings(text):
+    assert safety.screen(text).kind == "emergency"
+
+
+@pytest.mark.parametrize("text", [
+    "I don't want to die, I just have a cough",          # not a crisis
+    "the cream is not responding, I mean not working",   # "not responding" about an object
+    "my nose is swollen from allergies? no, it's fine",  # minor, not the airway words
+])
+def test_false_alarms_avoided(text):
+    assert safety.screen(text).kind is None
+
+
+def test_asking_for_a_doctor_is_a_handoff():
+    assert safety.screen("is there a doctor I can talk to").kind == "handoff"
+
+
+@pytest.mark.parametrize("dob", ["2031-01-01", "1850-06-01", "not a date"])
+def test_impossible_birthdays_are_rejected(dob):
+    st = S.new_session()
+    assert T.lookup_patient(st, "Some One", dob)["ok"] is False and st.date_of_birth is None
+
+
+def test_phone_with_country_code():
+    st = S.new_session()
+    assert T.save_callback_number(st, "+1 (416) 555-0134")["saved"] == "416-555-0134"
+
+
+def _ready(st):
+    T.lookup_patient(st, "Maria Lopez", "1985-03-12")
+    T.save_callback_number(st, "4165550134")
+    T.record_intake(st, "check-up", "checkup")
+
+
+def test_next_tuesday_is_understood():
+    st = S.new_session(); _ready(st)
+    slots = T.check_availability(st, preferred_day="next Tuesday")["slots"]
+    assert slots and all("Tuesday" in s["label"] for s in slots)
+
+
+def test_weekend_request_says_clinic_is_closed():
+    st = S.new_session(); _ready(st)
+    res = T.check_availability(st, preferred_day="Saturday")
+    assert "closed on weekends" in res["note"] and res["slots"]
+
+
+def test_cannot_book_twice_in_one_call():
+    st = S.new_session(); _ready(st)
+    slot = st.offered_slots[0]["slot_id"]
+    assert T.book_appointment(st, slot, True)["ok"]
+    assert "book_appointment" in T.available_tools(st) or st.stage == S.BOOKED
+
+
+def test_emergency_after_booking_still_wins():
+    st = S.new_session(); _ready(st)
+    T.book_appointment(st, st.offered_slots[0]["slot_id"], True)
+
+    async def must_not_run(**_):
+        raise AssertionError("LLM should not be called")
+    out = turn(st, "wait, now my chest feels really tight", must_not_run)
+    assert st.stage == S.EMERGENCY and "911" in out["reply"]
+
+
+def test_empty_or_garbled_input_does_not_crash():
+    st = S.new_session()
+    out = turn(st, "", scripted(say("Sorry, I didn't catch that. Could you repeat your full name?")))
+    assert out["reply"] and st.stage == S.IDENTIFY

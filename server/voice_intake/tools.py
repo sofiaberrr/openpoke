@@ -89,7 +89,9 @@ def _matches(slot: datetime, preferred_day: Optional[str], time_of_day: Optional
             return slot.date() == today
         if p == "tomorrow":
             return slot.date() == today + timedelta(days=1)
-        if p not in slot.strftime("%A").lower():
+        days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        named = [d for d in days if d in p]          # "next Tuesday", "Tuesday morning" -> tuesday
+        if named and slot.strftime("%A").lower() not in named:
             return False
     return True
 
@@ -103,9 +105,12 @@ def _normalize_phone(raw: str) -> Optional[str]:
 
 def _normalize_dob(raw: str) -> Optional[str]:
     try:
-        return dateparser.parse(raw).date().isoformat()
+        d = dateparser.parse(raw).date()
     except Exception:
         return None
+    if d > _now().date() or d.year < 1900:   # a birthday in the future or before 1900 is a mishearing
+        return None
+    return d.isoformat()
 
 
 def _caller_said(state: S.CallState) -> str:
@@ -211,6 +216,8 @@ def check_availability(state: S.CallState, preferred_day: Optional[str] = None,
         candidates = _slots(4)[:2]   # next couple of business days
         note = (note or "") + ("No same-day openings left. Offer the earliest slot below AND offer to transfer them to "
                 "a nurse or staff member today.")
+    if preferred_day and any(d in preferred_day.lower() for d in ("saturday", "sunday", "weekend")):
+        note = (note or "") + " The clinic is closed on weekends; say so and offer weekday times."
     preferred = [s for s in candidates if _matches(s, preferred_day, time_of_day)]
     if (preferred_day or time_of_day) and not preferred:
         note = (note or "") + " The caller's preferred time isn't available within the safe window; say so and offer these instead."

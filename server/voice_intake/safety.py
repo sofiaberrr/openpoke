@@ -14,14 +14,15 @@ from typing import List, Optional
 
 # Phrases that mean "call 911 now". Kept readable on purpose so the clinic can audit them.
 EMERGENCY_PATTERNS = {
-    "chest pain": r"chest (pain|pressure|tightness|hurts?)|pain in (my|his|her|the) chest|heart attack",
-    "trouble breathing": r"(can'?t|cannot|can not|hard to|trouble|difficulty|struggling to) breath|short(ness)? of breath|not breathing|choking",
-    "stroke signs": r"stroke|face (is )?droop|slurred speech|slurring|(one side|left side|right side) (of (my|his|her) (body|face) )?(is )?(numb|weak)|can'?t move (my|his|her) (arm|leg)",
-    "unresponsive": r"unconscious|unresponsive|passed out|won'?t wake up|fainted|blacked out",
+    "chest pain": r"chest (pain|pressure|tightness|hurts?)|chest (feels|is) (really |very |so )?(tight|heavy|crushing)|pain in (my|his|her|the) chest|heart attack",
+    "trouble breathing": r"(can'?t|cannot|can not|hard to|trouble|difficulty|struggling to|barely|hardly) (breath|catch (my|his|her) breath)|short(ness)? of breath|not breathing|choking|gasping",
+    "stroke signs": r"stroke|face (is )?droop|slurred speech|slurring|(one side|left side|right side) (of (my|his|her) (body|face) )?(is )?(numb|weak)|can'?t feel (the |my |his |her )?(left|right|one) side|can'?t move (my|his|her) (arm|leg)",
+    "unresponsive": r"unconscious|unresponsive|passed out|won'?t wake up|fainted|blacked out|collapsed|\b(he|she|they|baby|dad|mom|husband|wife|son|daughter|child|kid)('s| is| isn'?t| won'?t)( not)? respond",
+    "pregnancy bleeding": r"pregnan\w*.{0,40}bleed|bleed\w*.{0,40}pregnan",
     "severe bleeding": r"(won'?t|will not|can'?t) stop bleeding|bleeding (a lot|heavily|badly|everywhere)|severe bleeding|lots of blood",
     "seizure": r"seizure|convuls",
     "overdose or poisoning": r"overdos|took too many|poison",
-    "severe allergic reaction": r"anaphyla|throat (is )?(swelling|closing)|tongue (is )?swelling|epi ?pen",
+    "severe allergic reaction": r"anaphyla|(throat|tongue|lips?|face) (is |are )?(swelling|swollen|closing)|epi ?pen",
     "worst headache": r"worst headache",
     "coughing or vomiting blood": r"(cough|vomit|throw)(ing)?( up)? blood",
 }
@@ -30,7 +31,7 @@ EMERGENCY_PATTERNS = {
 CRISIS_PATTERNS = r"suicid|kill(ing)? myself|end(ing)? (my life|it all)|want(ing)? to die|hurt(ing)? myself|self[- ]harm"
 
 # Caller explicitly wants a person.
-HANDOFF_PATTERNS = r"\b(human|real person|a person|someone real|receptionist|front desk|operator|talk to (a|the) (nurse|doctor|staff))\b|\b(speak|talk) to (an? )?agent\b"
+HANDOFF_PATTERNS = r"(talk|speak) to (a|the) (doctor|nurse)|doctor i can (talk|speak) to|\b(human|real person|a person|someone real|receptionist|front desk|operator|talk to (a|the) (nurse|doctor|staff))\b|\b(speak|talk) to (an? )?agent\b"
 
 # Words right before a match that flip its meaning ("no chest pain").
 NEGATIONS = r"\b(no|not|never|without|don'?t have|doesn'?t have|denies|isn'?t|wasn'?t|any)\s+(\w+\s+){0,2}$"
@@ -50,8 +51,10 @@ def _negated(text: str, start: int) -> bool:
 def screen(utterance: str) -> ScreenResult:
     text = utterance.lower()
 
-    if re.search(CRISIS_PATTERNS, text):
-        return ScreenResult("crisis", ["possible mental health crisis"])
+    for m in re.finditer(CRISIS_PATTERNS, text):
+        # "I don't want to die, I just have a cough" is not a crisis
+        if not re.search(r"\b(don'?t|do not|never)\s+$", text[max(0, m.start() - 12):m.start()]):
+            return ScreenResult("crisis", ["possible mental health crisis"])
 
     hits = []
     for label, pattern in EMERGENCY_PATTERNS.items():
