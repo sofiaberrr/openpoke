@@ -15,7 +15,9 @@ SOON = "soon"          # within 3 days
 ROUTINE = "routine"    # within ~2 weeks
 
 WINDOW_DAYS = {SAME_DAY: 0, SOON: 3, ROUTINE: 14}
-SPOKEN = {SAME_DAY: "today", SOON: "in the next few days", ROUTINE: "a regular appointment"}
+SPOKEN = {SAME_DAY: "we'd like to see you today",
+          SOON: "we'd like to see you within the next few days",
+          ROUTINE: "this can be a regular appointment, no rush"}
 
 # Symptoms that should be seen today even when they don't sound like an emergency.
 SAME_DAY_TERMS = [

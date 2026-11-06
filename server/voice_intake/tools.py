@@ -129,7 +129,12 @@ def lookup_patient(state: S.CallState, full_name: str, date_of_birth: str) -> Di
                     "then ask for the best callback number."}
 
 
-def save_callback_number(state: S.CallState, phone: str) -> Dict[str, Any]:
+def save_callback_number(state: S.CallState, phone: str = "", use_number_on_file: bool = False) -> Dict[str, Any]:
+    if use_number_on_file:
+        on_file = next((p["phone"] for p in PATIENTS if p["id"] == state.patient_id), None)
+        if not on_file:
+            return {"ok": False, "error": "No number on file. Ask the caller for their number."}
+        phone = on_file
     number = _normalize_phone(phone)
     if not number:
         return {"ok": False, "error": "That isn't a 10-digit number. Ask the caller to repeat it."}
@@ -145,7 +150,7 @@ def record_intake(state: S.CallState, reason: str, visit_type: str, severity: Op
                         days_since_onset=days_since_onset, getting_worse=getting_worse)
     state.priority, state.priority_reasons = p.level, p.reasons
     state.offered_slots = []
-    return {"ok": True, "priority": p.level, "means": f"should be seen {p.spoken}", "because": p.reasons,
+    return {"ok": True, "priority": p.level, "tell_caller": p.spoken, "because": p.reasons,
             "next": "Briefly tell the caller how soon they should be seen, in plain words, without any medical "
                     "opinion. Then check availability."}
 
@@ -222,8 +227,8 @@ SCHEMAS = {
     "lookup_patient": _fn("lookup_patient", "Look up the caller once you have their full name and date of birth.",
                           {"full_name": {"type": "string"}, "date_of_birth": {"type": "string", "description": "YYYY-MM-DD"}},
                           ["full_name", "date_of_birth"]),
-    "save_callback_number": _fn("save_callback_number", "Save the caller's callback phone number.",
-                                {"phone": {"type": "string"}}, ["phone"]),
+    "save_callback_number": _fn("save_callback_number", "Save the callback number. Call it IMMEDIATELY every time the caller says a number, including corrections. If they confirm the number on file is fine, call it with use_number_on_file=true.",
+                                {"phone": {"type": "string"}, "use_number_on_file": {"type": "boolean"}}, []),
     "record_intake": _fn("record_intake", "Record the reason for the visit once you have it (and the answers to your 1-2 clarifying questions). Returns the priority. Call again if the caller corrects something.",
                          {"reason": {"type": "string", "description": "Short summary in the caller's words"},
                           "visit_type": {"type": "string", "enum": ["new_problem", "follow_up", "prescription_refill", "checkup", "forms_or_paperwork", "other"]},

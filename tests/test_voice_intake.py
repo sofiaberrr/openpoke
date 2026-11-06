@@ -191,3 +191,9 @@ def test_model_cannot_call_hidden_tool():
     turn(st, "book me anything", llm)
     assert st.booking is None
     assert "book_appointment" not in llm.seen[0]
+
+
+def test_caller_can_keep_number_on_file():
+    st = S.new_session()
+    T.lookup_patient(st, "Maria Lopez", "1985-03-12")
+    assert T.save_callback_number(st, use_number_on_file=True)["saved"] == "416-555-0134"
