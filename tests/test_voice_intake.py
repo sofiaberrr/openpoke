@@ -322,3 +322,26 @@ def test_empty_or_garbled_input_does_not_crash():
     st = S.new_session()
     out = turn(st, "", scripted(say("Sorry, I didn't catch that. Could you repeat your full name?")))
     assert out["reply"] and st.stage == S.IDENTIFY
+
+
+@pytest.mark.parametrize("text", [
+    "my baby is 6 weeks old and has a fever of 39",
+    "she's a newborn and she has a fever",
+    "fever in my 3 week old",
+    "my two month old has a fever",
+])
+def test_fever_in_young_infant_is_an_emergency(text):
+    assert safety.screen(text).kind == "emergency"
+
+
+def test_fever_in_older_child_is_not_auto_911():
+    assert safety.screen("my 6 year old has a fever").kind is None
+
+
+def test_stalling_reply_gets_a_second_chance_to_act():
+    st = S.new_session()
+    llm = scripted(say("Okay, just a moment."),                          # stalls
+                   call("lookup_patient", full_name="Maria Lopez", date_of_birth="1985-03-12"),
+                   say("Thanks Maria. Is the number ending in 0134 still good?"))
+    out = turn(st, "Maria Lopez, March 12 1985", llm)
+    assert st.patient_id == "P-1001" and "0134" in out["reply"]

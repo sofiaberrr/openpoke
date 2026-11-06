@@ -29,6 +29,9 @@ FAILURE_SCRIPT = ("Sorry, I'm having trouble with our system right now. I'm goin
 # If the model *says* it's transferring but forgot to call the tool, we still transfer.
 PROMISED_TRANSFER = re.compile(r"\b(transfer(ring)?|connect(ing)?) you\b|\bput you through\b", re.I)
 
+# Stalling ("just a moment") with no tool call leaves the caller waiting for nothing.
+STALL = re.compile(r"\b(just a moment|one moment|one sec(ond)?|give me a (moment|second)|let me check|please hold on)\b", re.I)
+
 LLMFn = Callable[..., Awaitable[Dict[str, Any]]]
 
 
@@ -96,6 +99,7 @@ async def handle_turn(state: S.CallState, caller_text: str, llm: LLMFn = _defaul
 
     # 3. LLM turn with gated tools
     messages: List[Dict[str, Any]] = _history(state)
+    nudged = False
     try:
         for _ in range(MAX_TOOL_ROUNDS):
             tool_names = T.available_tools(state)
@@ -107,6 +111,14 @@ async def handle_turn(state: S.CallState, caller_text: str, llm: LLMFn = _defaul
                 text = (msg.get("content") or "").strip()
                 if not text:
                     raise RuntimeError("empty model reply")
+                if STALL.search(text) and not PROMISED_TRANSFER.search(text) and not nudged:
+                    # The model promised to do something but did nothing: make it act now, once.
+                    nudged = True
+                    state.log("guard", result="model stalled without a tool call; asked it to act now")
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "user", "content": "(system note: the caller is waiting. Do not stall. "
+                                     "Call the tool you need now, then give your actual answer.)"})
+                    continue
                 if PROMISED_TRANSFER.search(text):
                     T.transfer_to_human(state, "assistant offered a transfer")
                     state.log("guard", result="model promised transfer without the tool; transferred")

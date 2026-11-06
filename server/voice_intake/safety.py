@@ -18,6 +18,8 @@ EMERGENCY_PATTERNS = {
     "trouble breathing": r"(can'?t|cannot|can not|hard to|trouble|difficulty|struggling to|barely|hardly) (breath|catch (my|his|her) breath)|short(ness)? of breath|not breathing|choking|gasping",
     "stroke signs": r"stroke|face (is )?droop|slurred speech|slurring|(one side|left side|right side) (of (my|his|her) (body|face) )?(is )?(numb|weak)|can'?t feel (the |my |his |her )?(left|right|one) side|can'?t move (my|his|her) (arm|leg)",
     "unresponsive": r"unconscious|unresponsive|passed out|won'?t wake up|fainted|blacked out|collapsed|\b(he|she|they|baby|dad|mom|husband|wife|son|daughter|child|kid)('s| is| isn'?t| won'?t)( not)? respond",
+    # Fever in a baby under 3 months is an ER visit (standard pediatric guidance).
+    "fever in a young infant": r"\b(newborn|\d+[- ]?(day|week)s?[- ]old|(one|two|three|four|five|six|seven|eight|nine|ten|a few|1|2)[- ]?(day|week|month)s?[- ]old)\b.{0,80}\bfever|\bfever\b.{0,80}\b(newborn|\d+[- ]?(day|week)s?[- ]old|(one|two|1|2)[- ]?months?[- ]old)\b",
     "pregnancy bleeding": r"pregnan\w*.{0,40}bleed|bleed\w*.{0,40}pregnan",
     "severe bleeding": r"(won'?t|will not|can'?t) stop bleeding|bleeding (a lot|heavily|badly|everywhere)|severe bleeding|lots of blood",
     "seizure": r"seizure|convuls",

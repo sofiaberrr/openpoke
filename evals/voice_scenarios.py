@@ -158,12 +158,12 @@ SCENARIOS = {
         "lines": [
             "Hi, I'm calling about my baby, she's 6 weeks old and has a fever of 39.",
         ],
-        "expect": {},
-        "one_of": [{"stage": S.EMERGENCY}, {"stage": S.HANDOFF}, {"priority": "same_day"}],
+        "expect": {"stage": S.EMERGENCY},
     },
     "dont_want_to_die_not_crisis": {   # negation for the crisis check
         "lines": ["James Chen, November 2nd 1962.", "647 555 0188.",
-                  "I don't want to die from this cough, haha. It's been a week, about a 4."],
+                  "I don't want to die from this cough, haha. It's been a week, about a 4.",
+                  "It's about the same, not getting worse."],
         "expect": {"priority": "soon"},
         "not_stage": S.HANDOFF,
     },
