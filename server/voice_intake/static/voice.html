@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Maple Family Clinic · Voice Intake</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#6b7280; --line:#e5e7eb;
+          --accent:#2563eb; --red:#dc2626; --amber:#d97706; --green:#16a34a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:16px 24px; background:var(--card); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  button { font:inherit; border:0; border-radius:8px; padding:9px 16px; cursor:pointer; background:var(--accent); color:#fff; }
+  button.secondary { background:#e5e7eb; color:var(--ink); }
+  button:disabled { opacity:.45; cursor:default; }
+  label.toggle { font-size:13px; color:var(--muted); display:flex; gap:6px; align-items:center; }
+  main { display:grid; grid-template-columns: 1.3fr 1fr; gap:20px; padding:20px 24px; max-width:1300px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  #transcript { height:58vh; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:80%; padding:9px 13px; border-radius:12px; }
+  .agent { background:#eef2ff; align-self:flex-start; }
+  .caller { background:#ecfdf5; align-self:flex-end; }
+  .interim { opacity:.55; font-style:italic; }
+  .sys { align-self:center; font-size:12px; color:var(--muted); }
+  #inputRow { display:flex; gap:8px; margin-top:12px; }
+  #textIn { flex:1; padding:9px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
+  #status { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:8px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#cbd5e1; }
+  .dot.listening { background:var(--green); animation:pulse 1.2s infinite; }
+  .dot.speaking { background:var(--accent); }
+  .dot.thinking { background:var(--amber); }
+  @keyframes pulse { 50% { opacity:.35; } }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 6px; }
+  h2:first-child { margin-top:0; }
+  .stages { display:flex; flex-wrap:wrap; gap:6px; }
+  .stage { font-size:12px; padding:3px 9px; border-radius:99px; background:#f1f5f9; color:var(--muted); }
+  .stage.on { background:var(--accent); color:#fff; }
+  .stage.bad { background:var(--red); color:#fff; }
+  .kv { display:grid; grid-template-columns:120px 1fr; gap:4px 10px; font-size:14px; }
+  .kv div:nth-child(odd) { color:var(--muted); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600; color:#fff; }
+  .same_day { background:var(--red); } .soon { background:var(--amber); } .routine { background:var(--green); }
+  #banner { display:none; padding:10px 14px; border-radius:8px; margin-bottom:12px; font-weight:600; }
+  #banner.emergency { display:block; background:#fee2e2; color:var(--red); }
+  #banner.handoff { display:block; background:#fef3c7; color:#92400e; }
+  #banner.booked { display:block; background:#dcfce7; color:#166534; }
+  #events { font:12px/1.5 ui-monospace, Menlo, monospace; max-height:22vh; overflow-y:auto; color:#374151; }
+  .note { font-size:13px; background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🩺 Maple Family Clinic · Voice Intake Agent</h1>
+  <div id="status"><span class="dot" id="dot"></span><span id="statusText">Idle</span></div>
+  <label class="toggle"><input type="checkbox" id="failToggle"> Simulate tool failure</label>
+  <label class="toggle"><input type="checkbox" id="voiceToggle" checked> Voice on</label>
+  <button id="startBtn">📞 Start call</button>
+  <button id="endBtn" class="secondary" disabled>Hang up</button>
+</header>
+
+<main>
+  <section class="card">
+    <div id="banner"></div>
+    <div id="transcript"></div>
+    <div id="inputRow">
+      <input id="textIn" placeholder="Speak, or type here and press Enter" disabled>
+      <button id="sendBtn" class="secondary" disabled>Send</button>
+    </div>
+  </section>
+
+  <aside class="card">
+    <h2>Call stage</h2>
+    <div class="stages" id="stages"></div>
+    <h2>What the agent knows</h2>
+    <div class="kv" id="facts"></div>
+    <h2>Priority</h2>
+    <div id="priority" class="note">Not set yet</div>
+    <h2>Staff handoff note</h2>
+    <div id="handoff" class="note">None</div>
+    <h2>Tool calls & timing</h2>
+    <div id="events"></div>
+  </aside>
+</main>
+
+<script>
+const API = "/api/v1/voice";
+const STAGES = ["identify", "intake", "schedule", "confirm", "booked", "emergency", "handoff"];
+const $ = (id) => document.getElementById(id);
+
+let sessionId = null, callActive = false, speaking = false, waiting = false;
+let pending = "", sendTimer = null, currentUtterance = "", interimEl = null;
+const END_OF_TURN_MS = 900;   // silence after a final result before we send the turn
+
+// ---------------- UI helpers
+function setStatus(kind, text) { $("dot").className = "dot " + kind; $("statusText").textContent = text; }
+function addMsg(role, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + role; el.textContent = text;
+  $("transcript").appendChild(el); $("transcript").scrollTop = 1e9; return el;
+}
+function showInterim(text) {
+  if (!interimEl) interimEl = addMsg("caller interim", "");
+  interimEl.textContent = text; $("transcript").scrollTop = 1e9;
+}
+function clearInterim() { if (interimEl) { interimEl.remove(); interimEl = null; } }
+
+function render(state, latency) {
+  $("stages").innerHTML = STAGES.map(s => {
+    const on = s === state.stage, bad = on && (s === "emergency" || s === "handoff");
+    return `<span class="stage ${bad ? "bad" : on ? "on" : ""}">${s}</span>`;
+  }).join("");
+  const f = (x) => x ?? "—";
+  $("facts").innerHTML = `
+    <div>Name</div><div>${f(state.full_name)}</div>
+    <div>Date of birth</div><div>${f(state.date_of_birth)}</div>
+    <div>Patient</div><div>${state.patient_id ? state.patient_id : (state.new_patient ? "new patient" : "—")}</div>
+    <div>Callback</div><div>${f(state.callback_number)}</div>
+    <div>Reason</div><div>${f(state.reason)}</div>
+    <div>Offered</div><div>${state.offered_slots.map(s => s.label).join("<br>") || "—"}</div>
+    <div>Booking</div><div>${state.booking ? state.booking.label + " (" + state.booking.confirmation + ")" : "—"}</div>`;
+  $("priority").innerHTML = state.priority
+    ? `<span class="pill ${state.priority}">${state.priority.replace("_", "-")}</span> because: ${state.priority_reasons.join("; ")}`
+    : "Not set yet";
+  $("handoff").textContent = state.escalation ? `[${state.escalation.type.toUpperCase()}] ${state.escalation.reason}\n${state.escalation.note}` : "None";
+  $("events").innerHTML = state.events.slice().reverse().map(e => {
+    if (e.kind === "tool") return `${e.t}s  🔧 ${e.name}(${JSON.stringify(e.args)}) → ${e.ok === false ? "error" : "ok"}`;
+    if (e.kind === "reply") return `${e.t}s  💬 reply in ${e.ms} ms`;
+    return `${e.t}s  ⚠️ ${e.kind} ${e.result || e.error || ""}`;
+  }).join("<br>");
+  const b = $("banner");
+  b.className = "";
+  if (state.stage === "emergency") { b.className = "emergency"; b.textContent = "🚨 Emergency: caller told to call 911. Booking stopped."; }
+  else if (state.stage === "handoff") { b.className = "handoff"; b.textContent = "👤 Transferred to clinic staff (" + state.escalation.reason + ")"; }
+  else if (state.stage === "booked") { b.className = "booked"; b.textContent = "✅ Booked: " + state.booking.label; }
+}
+
+// ---------------- text to speech (with barge-in)
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  return voices.find(v => /Samantha|Google US English|Jenny|Aria/.test(v.name)) || voices.find(v => v.lang.startsWith("en"));
+}
+function speak(text, onDone) {
+  if (!$("voiceToggle").checked) { onDone && onDone(); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = pickVoice(); if (v) u.voice = v;
+  u.rate = 1.05;
+  currentUtterance = text.toLowerCase();
+  speaking = true; setStatus("speaking", "Agent speaking (talk to interrupt)");
+  u.onend = u.onerror = () => { speaking = false; currentUtterance = ""; if (callActive) setStatus("listening", "Listening…"); onDone && onDone(); };
+  speechSynthesis.speak(u);
+}
+function bargeIn(heard) {
+  // Ignore the mic hearing the agent's own voice: only interrupt on words the agent isn't saying.
+  const words = heard.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return;
+  if (currentUtterance.includes(words.slice(-2).join(" "))) return;
+  speechSynthesis.cancel(); speaking = false;
+  addMsg("sys", "↩ caller interrupted");
+  setStatus("listening", "Listening…");
+}
+
+// ---------------- speech to text
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, micBlocked = false;
+function startRecognition() {
+  if (!SR) { addMsg("sys", "Speech recognition isn't supported in this browser. Use Chrome, or type below."); return; }
+  rec = new SR(); rec.lang = "en-CA"; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) { pending += " " + r[0].transcript; } else { interim += r[0].transcript; }
+    }
+    if (speaking && (interim || pending)) bargeIn(interim || pending);
+    if (speaking) return;
+    showInterim((pending + " " + interim).trim());
+    clearTimeout(sendTimer);
+    if (pending.trim() && !interim) sendTimer = setTimeout(flush, END_OF_TURN_MS);
+  };
+  rec.onend = () => { if (callActive && !micBlocked) { try { rec.start(); } catch (_) {} } };
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      if (!micBlocked) addMsg("sys", "Microphone blocked. Allow mic access, or type below.");
+      micBlocked = true;
+    }
+  };
+  try { rec.start(); } catch (_) {}
+}
+function flush() {
+  const text = pending.trim(); pending = ""; clearInterim();
+  if (text) sendTurn(text);
+}
+
+// ---------------- server calls
+async function startCall() {
+  const r = await fetch(API + "/session", { method: "POST" }).then(r => r.json());
+  sessionId = r.session_id; callActive = true; micBlocked = false;
+  $("transcript").innerHTML = ""; addMsg("sys", "Call connected · session " + sessionId);
+  $("startBtn").disabled = true; $("endBtn").disabled = false; $("textIn").disabled = false; $("sendBtn").disabled = false;
+  if ($("failToggle").checked) await setFailure(true);
+  render(r.state); addMsg("agent", r.reply);
+  startRecognition(); speak(r.reply);
+}
+async function sendTurn(text) {
+  if (!callActive || !text) return;
+  addMsg("caller", text);
+  waiting = true; setStatus("thinking", "Thinking…");
+  const t0 = performance.now();
+  let r;
+  try {
+    r = await fetch(API + "/turn", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, text }) }).then(r => r.json());
+  } catch (err) {
+    r = { reply: "Sorry, I lost the connection. Please call the front desk directly.", state: null, end_call: true };
+  }
+  waiting = false;
+  const total = Math.round(performance.now() - t0);
+  addMsg("agent", r.reply);
+  if (r.state) render(r.state);
+  addMsg("sys", `round trip ${total} ms`);
+  speak(r.reply, () => { if (r.end_call) endCall(true); });
+}
+async function setFailure(on) {
+  if (!sessionId) return;
+  await fetch(API + "/simulate_failure", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, on }) });
+}
+function endCall(auto) {
+  callActive = false; if (rec) { try { rec.stop(); } catch (_) {} }
+  if (!auto) speechSynthesis.cancel();
+  setStatus("", "Call ended"); addMsg("sys", "Call ended");
+  $("startBtn").disabled = false; $("endBtn").disabled = true; $("textIn").disabled = true; $("sendBtn").disabled = true;
+}
+
+$("startBtn").onclick = startCall;
+$("endBtn").onclick = () => endCall(false);
+$("failToggle").onchange = (e) => setFailure(e.target.checked);
+$("sendBtn").onclick = () => { const t = $("textIn").value; $("textIn").value = ""; sendTurn(t); };
+$("textIn").onkeydown = (e) => { if (e.key === "Enter") $("sendBtn").click(); };
+speechSynthesis.onvoiceschanged = () => {};
+render({ stage: "identify", offered_slots: [], priority_reasons: [], events: [] });
+</script>
+</body>
+</html>
