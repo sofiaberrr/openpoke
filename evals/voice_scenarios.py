@@ -36,6 +36,7 @@ SCENARIOS = {
             "It's about an 8 out of 10, and it's getting worse.",
             "Whatever's earliest.",
             "Yes, book it.",
+            "Yes, that's correct.",
         ],
         "expect": {"stage": S.BOOKED, "priority": "same_day"},
     },
