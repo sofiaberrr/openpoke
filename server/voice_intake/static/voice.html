@@ -55,6 +55,7 @@
   <div id="status"><span class="dot" id="dot"></span><span id="statusText">Idle</span></div>
   <label class="toggle"><input type="checkbox" id="failToggle"> Simulate tool failure</label>
   <label class="toggle"><input type="checkbox" id="voiceToggle" checked> Voice on</label>
+  <label class="toggle"><input type="checkbox" id="naturalToggle" checked> Natural voice</label>
   <button id="startBtn">📞 Start call</button>
   <button id="endBtn" class="secondary" disabled>Hang up</button>
 </header>
@@ -142,23 +143,49 @@ function pickVoice() {
   const voices = speechSynthesis.getVoices();
   return voices.find(v => /Samantha|Google US English|Jenny|Aria/.test(v.name)) || voices.find(v => v.lang.startsWith("en"));
 }
-function speak(text, onDone) {
-  if (!$("voiceToggle").checked) { onDone && onDone(); return; }
-  speechSynthesis.cancel();
+let audio = null;
+function startedSpeaking(text) {
+  currentUtterance = text.toLowerCase();
+  speaking = true; setStatus("speaking", "Agent speaking (talk to interrupt)");
+}
+function doneSpeaking(onDone) {
+  speaking = false; currentUtterance = ""; audio = null;
+  if (callActive) setStatus("listening", "Listening…");
+  onDone && onDone();
+}
+function stopSpeaking() {
+  if (audio) { audio.pause(); audio = null; }
+  speechSynthesis.cancel(); speaking = false;
+}
+function speakBrowser(text, onDone) {
   const u = new SpeechSynthesisUtterance(text);
   const v = pickVoice(); if (v) u.voice = v;
   u.rate = 1.05;
-  currentUtterance = text.toLowerCase();
-  speaking = true; setStatus("speaking", "Agent speaking (talk to interrupt)");
-  u.onend = u.onerror = () => { speaking = false; currentUtterance = ""; if (callActive) setStatus("listening", "Listening…"); onDone && onDone(); };
+  startedSpeaking(text);
+  u.onend = u.onerror = () => doneSpeaking(onDone);
   speechSynthesis.speak(u);
+}
+function speak(text, onDone) {
+  if (!$("voiceToggle").checked) { onDone && onDone(); return; }
+  stopSpeaking();
+  if (!$("naturalToggle").checked) { speakBrowser(text, onDone); return; }
+  // Natural voice: stream audio from our server (OpenAI TTS). Falls back to the browser voice on any error.
+  const a = new Audio(API + "/tts?text=" + encodeURIComponent(text));
+  audio = a;
+  let fellBack = false;
+  const fallback = () => { if (fellBack || audio !== a) return; fellBack = true; audio = null;
+    addMsg("sys", "natural voice unavailable, using browser voice"); speakBrowser(text, onDone); };
+  a.onended = () => { if (audio === a) doneSpeaking(onDone); };
+  a.onerror = fallback;
+  startedSpeaking(text);
+  a.play().catch(fallback);
 }
 function bargeIn(heard) {
   // Ignore the mic hearing the agent's own voice: only interrupt on words the agent isn't saying.
   const words = heard.toLowerCase().trim().split(/\s+/).filter(Boolean);
   if (words.length < 2) return;
   if (currentUtterance.includes(words.slice(-2).join(" "))) return;
-  speechSynthesis.cancel(); speaking = false;
+  stopSpeaking();
   addMsg("sys", "↩ caller interrupted");
   setStatus("listening", "Listening…");
 }
@@ -231,7 +258,7 @@ async function setFailure(on) {
 }
 function endCall(auto) {
   callActive = false; if (rec) { try { rec.stop(); } catch (_) {} }
-  if (!auto) speechSynthesis.cancel();
+  if (!auto) stopSpeaking();
   setStatus("", "Call ended"); addMsg("sys", "Call ended");
   $("startBtn").disabled = false; $("endBtn").disabled = true; $("textIn").disabled = true; $("sendBtn").disabled = true;
 }

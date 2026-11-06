@@ -7,6 +7,7 @@ A voice agent for doctor's office intake, urgency routing, scheduling and human 
 ```bash
 pip install -r server/requirements.txt          # once
 # .env needs OPENROUTER_API_KEY. Model: VOICE_AGENT_MODEL (default openai/gpt-4o-mini, picked for speed)
+# Optional natural voice: OPENAI_API_KEY in .env (OpenAI gpt-4o-mini-tts, streamed). Without it, the browser voice is used.
 python -m uvicorn server.voice_intake.app:app --port 8001
 ```
 Open **http://localhost:8001/voice in Chrome**, click **Start call**, and talk. Use headphones so the mic doesn't hear the agent. You can also type in the box.
@@ -23,7 +24,7 @@ caller speaks -> browser speech-to-text -> POST /api/v1/voice/turn
    2. SAFETY SCREEN (plain code)   -> emergency: "call 911", stop | crisis: 911/988 + human | "real person": human
    3. LLM turn, with only the tools that make sense right now
    4. tool failure / LLM error     -> human handoff with a summary
-reply -> browser text-to-speech (the caller can talk over it to interrupt)
+reply -> OpenAI text-to-speech, streamed (falls back to browser voice) - the caller can talk over it to interrupt
 ```
 
 Stages: `identify -> intake -> schedule -> confirm -> booked`, plus `emergency` and `handoff`, which end the call.

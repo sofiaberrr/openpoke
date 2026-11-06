@@ -14,9 +14,9 @@ IDENTIFY, INTAKE, SCHEDULE, CONFIRM, BOOKED, EMERGENCY, HANDOFF = (
 TERMINAL = {BOOKED, EMERGENCY, HANDOFF}
 
 GREETING = (
-    "Hi, thanks for calling Maple Family Clinic. I'm the clinic's virtual assistant. "
-    "If this is a medical emergency, please hang up and call 911. "
-    "Can I start with your full name?"
+    "Hi, thanks for calling Maple Family Clinic, this is the virtual assistant. "
+    "If this is an emergency, please hang up and call 911. "
+    "Can I get your full name?"
 )
 
 
