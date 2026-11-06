@@ -59,19 +59,20 @@ async def simulate_failure(body: FailureIn) -> dict:
 
 
 # ---------------------------------------------------------------- natural voice (OpenAI text-to-speech)
-TTS_VOICE = os.getenv("VOICE_TTS_VOICE", "coral")
+TTS_VOICE = os.getenv("VOICE_TTS_VOICE", "nova")
+TTS_VOICES = {"nova", "shimmer", "alloy", "sage", "coral", "ash", "ballad", "echo", "fable", "onyx", "verse"}
 TTS_MODEL = os.getenv("VOICE_TTS_MODEL", "gpt-4o-mini-tts")
-TTS_STYLE = ("Warm, friendly medical receptionist on a phone call. Brisk, efficient, natural pace, like a real "
-             "person who does this all day. No long pauses. Calm and serious when talking about emergencies.")
+TTS_STYLE = ("Speak like a friendly, upbeat clinic receptionist on a normal phone call. Natural everyday tone, "
+             "quick pace, no dramatic pauses, no whispering, not breathy. Plain and serious for emergencies.")
 
 
 @router.get("/api/v1/voice/tts")
-async def tts(text: str):
+async def tts(text: str, voice: str = ""):
     """Streams speech audio so playback starts before the whole file is generated (lower latency)."""
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
         raise HTTPException(503, "OPENAI_API_KEY not set; the page falls back to the browser voice")
-    payload = {"model": TTS_MODEL, "voice": TTS_VOICE, "input": text[:1000], "response_format": "mp3"}
+    payload = {"model": TTS_MODEL, "voice": voice if voice in TTS_VOICES else TTS_VOICE, "input": text[:1000], "response_format": "mp3"}
     if "gpt-4o" in TTS_MODEL:
         payload["instructions"] = TTS_STYLE
 

@@ -55,7 +55,12 @@
   <div id="status"><span class="dot" id="dot"></span><span id="statusText">Idle</span></div>
   <label class="toggle"><input type="checkbox" id="failToggle"> Simulate tool failure</label>
   <label class="toggle"><input type="checkbox" id="voiceToggle" checked> Voice on</label>
-  <label class="toggle"><input type="checkbox" id="naturalToggle" checked> Natural voice</label>
+  <label class="toggle"><input type="checkbox" id="naturalToggle" checked> Natural voice
+    <select id="voicePick" style="font:inherit;font-size:13px">
+      <option value="nova">nova</option><option value="shimmer">shimmer</option><option value="alloy">alloy</option>
+      <option value="sage">sage</option><option value="coral">coral</option><option value="ash">ash</option>
+    </select></label>
+  <label class="toggle"><input type="checkbox" id="bargeToggle" checked> Allow interrupting</label>
   <button id="startBtn">📞 Start call</button>
   <button id="endBtn" class="secondary" disabled>Hang up</button>
 </header>
@@ -146,6 +151,7 @@ function pickVoice() {
 let audio = null;
 function startedSpeaking(text) {
   currentUtterance = text.toLowerCase();
+  speakStartedAt = performance.now();
   speaking = true; setStatus("speaking", "Agent speaking (talk to interrupt)");
 }
 function doneSpeaking(onDone) {
@@ -170,7 +176,7 @@ function speak(text, onDone) {
   stopSpeaking();
   if (!$("naturalToggle").checked) { speakBrowser(text, onDone); return; }
   // Natural voice: stream audio from our server (OpenAI TTS). Falls back to the browser voice on any error.
-  const a = new Audio(API + "/tts?text=" + encodeURIComponent(text));
+  const a = new Audio(API + "/tts?voice=" + $("voicePick").value + "&text=" + encodeURIComponent(text));
   a.playbackRate = 1.12;   // a touch faster sounds more natural on the phone
   audio = a;
   let fellBack = false;
@@ -181,14 +187,22 @@ function speak(text, onDone) {
   startedSpeaking(text);
   a.play().catch(fallback);
 }
+let speakStartedAt = 0;
 function bargeIn(heard) {
-  // Ignore the mic hearing the agent's own voice: only interrupt on words the agent isn't saying.
-  const words = heard.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  if (words.length < 2) return;
-  if (currentUtterance.includes(words.slice(-2).join(" "))) return;
+  // Background noise and the agent's own voice (echo) shouldn't count as an interruption.
+  // Only interrupt when: interrupting is on, the agent has been talking > 0.8s,
+  // the caller said 3+ words, and most of those words aren't what the agent is saying.
+  if (!$("bargeToggle").checked) return false;
+  if (performance.now() - speakStartedAt < 800) return false;
+  const words = heard.toLowerCase().replace(/[^a-z0-9' ]/g, "").trim().split(/\s+/).filter(Boolean);
+  if (words.length < 3) return false;
+  const agentWords = new Set(currentUtterance.replace(/[^a-z0-9' ]/g, "").split(/\s+/));
+  const fresh = words.filter(w => !agentWords.has(w)).length / words.length;
+  if (fresh < 0.6) return false;
   stopSpeaking();
   addMsg("sys", "↩ caller interrupted");
   setStatus("listening", "Listening…");
+  return true;
 }
 
 // ---------------- speech to text
@@ -198,13 +212,16 @@ function startRecognition() {
   if (!SR) { addMsg("sys", "Speech recognition isn't supported in this browser. Use Chrome, or type below."); return; }
   rec = new SR(); rec.lang = "en-CA"; rec.continuous = true; rec.interimResults = true;
   rec.onresult = (e) => {
-    let interim = "";
+    let interim = "", finals = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
-      if (r.isFinal) { pending += " " + r[0].transcript; } else { interim += r[0].transcript; }
+      if (r.isFinal) { finals += " " + r[0].transcript; } else { interim += r[0].transcript; }
     }
-    if (speaking && (interim || pending)) bargeIn(interim || pending);
-    if (speaking) return;
+    if (speaking) {
+      // While the agent talks, ignore what the mic hears unless it's a real interruption.
+      if (!bargeIn((finals + " " + interim).trim())) return;
+    }
+    pending += finals;
     showInterim((pending + " " + interim).trim());
     clearTimeout(sendTimer);
     if (pending.trim() && !interim) sendTimer = setTimeout(flush, END_OF_TURN_MS);
