@@ -61,8 +61,8 @@ async def simulate_failure(body: FailureIn) -> dict:
 # ---------------------------------------------------------------- natural voice (OpenAI text-to-speech)
 TTS_VOICE = os.getenv("VOICE_TTS_VOICE", "coral")
 TTS_MODEL = os.getenv("VOICE_TTS_MODEL", "gpt-4o-mini-tts")
-TTS_STYLE = ("Warm, calm, friendly medical receptionist on the phone. Natural conversational pace, "
-             "relaxed and reassuring, not robotic. Slightly slower and serious when talking about emergencies.")
+TTS_STYLE = ("Warm, friendly medical receptionist on a phone call. Brisk, efficient, natural pace, like a real "
+             "person who does this all day. No long pauses. Calm and serious when talking about emergencies.")
 
 
 @router.get("/api/v1/voice/tts")

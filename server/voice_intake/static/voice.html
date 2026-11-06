@@ -93,7 +93,7 @@ const $ = (id) => document.getElementById(id);
 
 let sessionId = null, callActive = false, speaking = false, waiting = false;
 let pending = "", sendTimer = null, currentUtterance = "", interimEl = null;
-const END_OF_TURN_MS = 900;   // silence after a final result before we send the turn
+const END_OF_TURN_MS = 650;   // silence after a final result before we send the turn
 
 // ---------------- UI helpers
 function setStatus(kind, text) { $("dot").className = "dot " + kind; $("statusText").textContent = text; }
@@ -160,7 +160,7 @@ function stopSpeaking() {
 function speakBrowser(text, onDone) {
   const u = new SpeechSynthesisUtterance(text);
   const v = pickVoice(); if (v) u.voice = v;
-  u.rate = 1.05;
+  u.rate = 1.15;
   startedSpeaking(text);
   u.onend = u.onerror = () => doneSpeaking(onDone);
   speechSynthesis.speak(u);
@@ -171,6 +171,7 @@ function speak(text, onDone) {
   if (!$("naturalToggle").checked) { speakBrowser(text, onDone); return; }
   // Natural voice: stream audio from our server (OpenAI TTS). Falls back to the browser voice on any error.
   const a = new Audio(API + "/tts?text=" + encodeURIComponent(text));
+  a.playbackRate = 1.12;   // a touch faster sounds more natural on the phone
   audio = a;
   let fellBack = false;
   const fallback = () => { if (fellBack || audio !== a) return; fellBack = true; audio = null;

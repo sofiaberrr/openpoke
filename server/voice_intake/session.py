@@ -43,6 +43,7 @@ class CallState:
 
     # scheduling
     offered_slots: List[Dict[str, Any]] = field(default_factory=list)
+    declined_slots: List[str] = field(default_factory=list)
     booking: Optional[Dict[str, Any]] = None
 
     # escalation

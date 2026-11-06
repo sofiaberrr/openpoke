@@ -88,11 +88,19 @@ def test_booking_tools_hidden_until_preconditions_met():
     assert "book_appointment" not in T.available_tools(st)
     T.lookup_patient(st, "Maria Lopez", "1985-03-12")
     T.save_callback_number(st, "416 555 0134")
-    T.record_intake(st, "refill", "prescription_refill")
+    res = T.record_intake(st, "refill", "prescription_refill")
+    assert res["available_slots"]  # availability comes back with the priority: one less LLM round trip
     assert "check_availability" in T.available_tools(st)
-    assert "book_appointment" not in T.available_tools(st)
-    T.check_availability(st)
     assert "book_appointment" in T.available_tools(st)
+
+
+def test_declined_times_are_not_offered_again():
+    st = S.new_session()
+    T.lookup_patient(st, "James Chen", "1962-11-02")
+    T.save_callback_number(st, "6475550188")
+    first = {s["slot_id"] for s in T.record_intake(st, "check-up", "checkup")["available_slots"]}
+    second = {s["slot_id"] for s in T.check_availability(st)["slots"]}
+    assert first and second and not (first & second)
 
 
 def test_book_requires_confirmation_and_offered_slot():

@@ -150,21 +150,34 @@ def record_intake(state: S.CallState, reason: str, visit_type: str, severity: Op
                         days_since_onset=days_since_onset, getting_worse=getting_worse)
     state.priority, state.priority_reasons = p.level, p.reasons
     state.offered_slots = []
+    # Fetch availability right away so the model doesn't need another round trip (lower latency).
+    avail = check_availability(state)
     return {"ok": True, "priority": p.level, "tell_caller": p.spoken, "because": p.reasons,
-            "next": "Briefly tell the caller how soon they should be seen, in plain words, without any medical "
-                    "opinion. Then check availability."}
+            "available_slots": avail.get("slots"), "note": avail.get("note"),
+            "next": "In ONE reply: say tell_caller, then offer 2 of the available_slots. No medical opinion."}
 
 
 def check_availability(state: S.CallState, preferred_day: Optional[str] = None,
                        time_of_day: Optional[str] = None) -> Dict[str, Any]:
     if state.simulate_tool_failure:
         raise ToolFailure("scheduling system unavailable")
+    # Times already offered and not taken count as declined: never re-offer them.
+    state.declined_slots.extend(s["slot_id"] for s in state.offered_slots)
     window = {SAME_DAY: 0, "soon": 3, ROUTINE: 14}[state.priority]
-    candidates = _slots(window)
     note = None
+    if state.priority == SAME_DAY and preferred_day and preferred_day.lower().strip() != "today":
+        window = 2
+        note = ("The caller can't come today. Offer these, say we'd still recommend being seen as soon as "
+                "possible, and offer to connect them with a nurse if it gets worse before then.")
+    candidates = [c for c in _slots(window) if c.strftime("%Y-%m-%dT%H:%M") not in state.declined_slots]
+    if not candidates and state.declined_slots:
+        window = max(window, 3)
+        candidates = [c for c in _slots(window + 2) if c.strftime("%Y-%m-%dT%H:%M") not in state.declined_slots]
+        note = ("Nothing else in the recommended window. Offer these later times, and if this is urgent "
+                "offer to connect them with a nurse.")
     if state.priority == SAME_DAY and not candidates:
         candidates = _slots(2)[:2]
-        note = ("No same-day openings left. Offer the earliest slot below AND offer to transfer them to "
+        note = (note or "") + ("No same-day openings left. Offer the earliest slot below AND offer to transfer them to "
                 "a nurse or staff member today.")
     preferred = [s for s in candidates if _matches(s, preferred_day, time_of_day)]
     if (preferred_day or time_of_day) and not preferred:
@@ -191,7 +204,7 @@ def book_appointment(state: S.CallState, slot_id: str, caller_confirmed: bool) -
     if not caller_confirmed:
         return {"ok": False, "error": "Read back name, callback number and the time, and get a clear yes first."}
     if slot_id in BOOKED:
-        state.offered_slots = []
+        state.offered_slots = [s for s in state.offered_slots if s["slot_id"] != slot_id]
         alt = check_availability(state)
         return {"ok": False, "conflict": True, "error": "That time was just taken.", "alternatives": alt.get("slots")}
     BOOKED.add(slot_id)
