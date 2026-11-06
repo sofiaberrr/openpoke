@@ -23,6 +23,7 @@
   .caller { background:#ecfdf5; align-self:flex-end; }
   .interim { opacity:.55; font-style:italic; }
   .sys { align-self:center; font-size:12px; color:var(--muted); }
+  #failBtn.on { background:var(--red); color:#fff; }
   #talkBtn { width:100%; margin-top:12px; padding:14px; font-size:16px; background:#eef2ff; color:var(--accent); border:2px solid var(--accent); }
   #talkBtn.on { background:var(--green); border-color:var(--green); color:#fff; }
   #inputRow { display:flex; gap:8px; margin-top:12px; }
@@ -55,7 +56,7 @@
 <header>
   <h1>🩺 Maple Family Clinic · Voice Intake Agent</h1>
   <div id="status"><span class="dot" id="dot"></span><span id="statusText">Idle</span></div>
-  <label class="toggle"><input type="checkbox" id="failToggle"> Simulate tool failure</label>
+  <button id="failBtn" class="secondary" type="button">Tool failure: OFF</button>
   <!-- settings are fixed for the demo (hidden): voice on, natural voice "nova" -->
   <input type="checkbox" id="voiceToggle" checked hidden>
   <input type="checkbox" id="naturalToggle" checked hidden>
@@ -246,7 +247,7 @@ async function startCall() {
   sessionId = r.session_id; callActive = true; micBlocked = false;
   $("transcript").innerHTML = ""; addMsg("sys", "Call connected · session " + sessionId);
   $("startBtn").disabled = true; $("endBtn").disabled = false; $("textIn").disabled = false; $("sendBtn").disabled = false;
-  if ($("failToggle").checked) await setFailure(true);
+  if (failOn) await setFailure(true);
   renderState(r.state); addMsg("agent", r.reply);
   $("talkBtn").disabled = false;
   speak(r.reply, talkReady);
@@ -290,7 +291,14 @@ $("talkBtn").addEventListener("mouseleave", holdEnd);
 $("talkBtn").addEventListener("touchstart", (e) => { e.preventDefault(); holdStart(); });
 $("talkBtn").addEventListener("touchend", (e) => { e.preventDefault(); holdEnd(); });
 $("endBtn").onclick = () => endCall(false);
-$("failToggle").onchange = (e) => setFailure(e.target.checked);
+let failOn = false;
+$("failBtn").onclick = () => {
+  failOn = !failOn;
+  $("failBtn").textContent = "Tool failure: " + (failOn ? "ON" : "OFF");
+  $("failBtn").classList.toggle("on", failOn);
+  $("failBtn").blur();          // so holding Space later doesn't press this button
+  setFailure(failOn);
+};
 $("sendBtn").onclick = () => { const t = $("textIn").value; $("textIn").value = ""; sendTurn(t); };
 $("textIn").onkeydown = (e) => { if (e.key === "Enter") $("sendBtn").click(); };
 speechSynthesis.onvoiceschanged = () => {};
