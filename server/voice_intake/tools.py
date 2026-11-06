@@ -108,11 +108,30 @@ def _normalize_dob(raw: str) -> Optional[str]:
         return None
 
 
+def _caller_said(state: S.CallState) -> str:
+    return " ".join(m["text"] for m in state.transcript if m["role"] == "caller")
+
+
+def _heard(state: S.CallState, digits: str) -> bool:
+    """Did the caller actually say these digits? Guards against the model 'completing' a number
+    that speech-to-text cut off (e.g. 'born July 20th 199' must not become 1990)."""
+    said = _caller_said(state).lower()
+    for word, d in {"zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+                    "six": "6", "seven": "7", "eight": "8", "nine": "9"}.items():
+        said = re.sub(rf"\b{word}\b", d, said)   # speech-to-text may spell digits out
+    if not said:          # direct tool use (tests) with no conversation: nothing to check against
+        return True
+    return digits in re.sub(r"\D", "", said)
+
+
 # ----------------------------------------------------------------- tool implementations
 def lookup_patient(state: S.CallState, full_name: str, date_of_birth: str) -> Dict[str, Any]:
     dob = _normalize_dob(date_of_birth)
     if not dob:
         return {"ok": False, "error": "Could not understand the date of birth. Ask again (month, day, year)."}
+    if not _heard(state, dob[:4]):
+        return {"ok": False, "error": f"The caller never clearly said the year {dob[:4]}; it may have been cut off. "
+                                      "Ask them to repeat their date of birth. Never guess digits."}
     # Save what the caller told us BEFORE touching the backend, so a handoff note still has it.
     state.full_name, state.date_of_birth = full_name.strip().title(), dob
     if state.simulate_tool_failure:
@@ -139,6 +158,9 @@ def save_callback_number(state: S.CallState, phone: str = "", use_number_on_file
     number = _normalize_phone(phone)
     if not number:
         return {"ok": False, "error": "That isn't a 10-digit number. Ask the caller to repeat it."}
+    if not use_number_on_file and not _heard(state, number[-4:]):
+        return {"ok": False, "error": "The caller never clearly said those digits; it may have been cut off. "
+                                      "Ask them to repeat the number. Never guess digits."}
     state.callback_number = f"{number[:3]}-{number[3:6]}-{number[6:]}"
     return {"ok": True, "saved": state.callback_number}
 

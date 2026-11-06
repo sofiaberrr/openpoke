@@ -222,12 +222,14 @@ function holdStart() {
   };
   try { rec.start(); } catch (_) {}
 }
+const RELEASE_TAIL_MS = 700;   // keep listening a moment after release so the last word isn't cut off
 function holdEnd() {
   if (!holding) return;
   holding = false;
   $("talkBtn").classList.remove("on");
   setStatus("thinking", "Thinking…");
-  try { rec.stop(); } catch (_) {}
+  const r = rec;
+  setTimeout(() => { try { r.stop(); } catch (_) {} }, RELEASE_TAIL_MS);
 }
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Space" || e.repeat || e.target === $("textIn")) return;

@@ -235,3 +235,15 @@ def test_priority_never_goes_down_during_a_call():
     assert st.priority == SAME_DAY
     T.record_intake(st, "refill", "prescription_refill", severity=2)   # model dropped the fever
     assert st.priority == SAME_DAY and "fever" in st.reason
+
+
+def test_cut_off_numbers_are_never_guessed():
+    st = S.new_session()
+    st.transcript.append({"role": "caller", "text": "my name is Arthur Chen and I was born on July 20th 199"})
+    res = T.lookup_patient(st, "Arthur Chen", "1990-07-20")      # model filled in the missing 0
+    assert res["ok"] is False and st.date_of_birth is None
+    st.transcript.append({"role": "caller", "text": "my number is 416 997 85"})
+    assert T.save_callback_number(st, "416-997-8569")["ok"] is False
+    st.transcript.append({"role": "caller", "text": "sorry, July 20th 1990, and 416 997 8569"})
+    assert T.lookup_patient(st, "Arthur Chen", "1990-07-20")["ok"]
+    assert T.save_callback_number(st, "416-997-8569")["ok"]
