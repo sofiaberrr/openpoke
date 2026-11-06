@@ -182,6 +182,7 @@ def test_tool_failure_hands_off_to_human_with_summary():
         call("lookup_patient", full_name="Aisha Patel", date_of_birth="1990-07-25")))
     assert st.stage == S.HANDOFF and "front desk" in out["reply"]
     assert "tool failure" in st.escalation["reason"]
+    assert "Aisha Patel" in st.escalation["note"]  # what the caller said still reaches staff
 
 
 def test_llm_outage_hands_off_instead_of_crashing():

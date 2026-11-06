@@ -110,12 +110,13 @@ def _normalize_dob(raw: str) -> Optional[str]:
 
 # ----------------------------------------------------------------- tool implementations
 def lookup_patient(state: S.CallState, full_name: str, date_of_birth: str) -> Dict[str, Any]:
-    if state.simulate_tool_failure:
-        raise ToolFailure("patient lookup service unavailable")
     dob = _normalize_dob(date_of_birth)
     if not dob:
         return {"ok": False, "error": "Could not understand the date of birth. Ask again (month, day, year)."}
+    # Save what the caller told us BEFORE touching the backend, so a handoff note still has it.
     state.full_name, state.date_of_birth = full_name.strip().title(), dob
+    if state.simulate_tool_failure:
+        raise ToolFailure("patient lookup service unavailable")
     for p in PATIENTS:
         if p["name"] == full_name.strip().lower() and p["dob"] == dob:
             state.patient_id, state.new_patient = p["id"], False

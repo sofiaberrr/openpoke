@@ -150,7 +150,7 @@ function pickVoice() {
 let audio = null;
 function startedSpeaking(text) {
   currentUtterance = text.toLowerCase();
-  speaking = true; setStatus("speaking", "Agent speaking (talk to interrupt)");
+  speaking = true; setStatus("speaking", "Agent speaking (hold Space to interrupt)");
 }
 function doneSpeaking(onDone) {
   speaking = false; currentUtterance = ""; audio = null;
