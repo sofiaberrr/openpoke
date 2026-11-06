@@ -84,6 +84,8 @@
 </main>
 
 <script>
+// Wrapped in a function so browser extensions that add globals (e.g. a global `render`) can't clash with ours.
+(() => {
 const API = "/api/v1/voice";
 const STAGES = ["identify", "intake", "schedule", "confirm", "booked", "emergency", "handoff"];
 const $ = (id) => document.getElementById(id);
@@ -105,7 +107,7 @@ function showInterim(text) {
 }
 function clearInterim() { if (interimEl) { interimEl.remove(); interimEl = null; } }
 
-function render(state, latency) {
+function renderState(state, latency) {
   $("stages").innerHTML = STAGES.map(s => {
     const on = s === state.stage, bad = on && (s === "emergency" || s === "handoff");
     return `<span class="stage ${bad ? "bad" : on ? "on" : ""}">${s}</span>`;
@@ -200,7 +202,7 @@ async function startCall() {
   $("transcript").innerHTML = ""; addMsg("sys", "Call connected · session " + sessionId);
   $("startBtn").disabled = true; $("endBtn").disabled = false; $("textIn").disabled = false; $("sendBtn").disabled = false;
   if ($("failToggle").checked) await setFailure(true);
-  render(r.state); addMsg("agent", r.reply);
+  renderState(r.state); addMsg("agent", r.reply);
   startRecognition(); speak(r.reply);
 }
 async function sendTurn(text) {
@@ -218,7 +220,7 @@ async function sendTurn(text) {
   waiting = false;
   const total = Math.round(performance.now() - t0);
   addMsg("agent", r.reply);
-  if (r.state) render(r.state);
+  if (r.state) renderState(r.state);
   addMsg("sys", `round trip ${total} ms`);
   speak(r.reply, () => { if (r.end_call) endCall(true); });
 }
@@ -240,7 +242,8 @@ $("failToggle").onchange = (e) => setFailure(e.target.checked);
 $("sendBtn").onclick = () => { const t = $("textIn").value; $("textIn").value = ""; sendTurn(t); };
 $("textIn").onkeydown = (e) => { if (e.key === "Enter") $("sendBtn").click(); };
 speechSynthesis.onvoiceschanged = () => {};
-render({ stage: "identify", offered_slots: [], priority_reasons: [], events: [] });
+renderState({ stage: "identify", offered_slots: [], priority_reasons: [], events: [] });
+})();
 </script>
 </body>
 </html>
