@@ -54,13 +54,11 @@
   <h1>🩺 Maple Family Clinic · Voice Intake Agent</h1>
   <div id="status"><span class="dot" id="dot"></span><span id="statusText">Idle</span></div>
   <label class="toggle"><input type="checkbox" id="failToggle"> Simulate tool failure</label>
-  <label class="toggle"><input type="checkbox" id="voiceToggle" checked> Voice on</label>
-  <label class="toggle"><input type="checkbox" id="naturalToggle" checked> Natural voice
-    <select id="voicePick" style="font:inherit;font-size:13px">
-      <option value="nova">nova</option><option value="shimmer">shimmer</option><option value="alloy">alloy</option>
-      <option value="sage">sage</option><option value="coral">coral</option><option value="ash">ash</option>
-    </select></label>
-  <label class="toggle"><input type="checkbox" id="bargeToggle" checked> Allow interrupting</label>
+  <!-- settings are fixed for the demo (hidden): voice on, natural voice "nova", interruptions on -->
+  <input type="checkbox" id="voiceToggle" checked hidden>
+  <input type="checkbox" id="naturalToggle" checked hidden>
+  <input type="checkbox" id="bargeToggle" checked hidden>
+  <input id="voicePick" value="nova" hidden>
   <button id="startBtn">📞 Start call</button>
   <button id="endBtn" class="secondary" disabled>Hang up</button>
 </header>
