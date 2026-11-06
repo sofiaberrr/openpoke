@@ -145,10 +145,19 @@ def save_callback_number(state: S.CallState, phone: str = "", use_number_on_file
 
 def record_intake(state: S.CallState, reason: str, visit_type: str, severity: Optional[int] = None,
                   days_since_onset: Optional[float] = None, getting_worse: Optional[bool] = None) -> Dict[str, Any]:
+    prev_reason = state.reason
     state.reason, state.visit_type = reason, visit_type
     state.severity, state.days_since_onset, state.getting_worse = severity, days_since_onset, getting_worse
     p = assign_priority(visit_type=visit_type, reason=reason, severity=severity,
                         days_since_onset=days_since_onset, getting_worse=getting_worse)
+    # Priority can only go UP during a call. If the model re-records intake and drops a detail
+    # (e.g. the fever), we keep the higher priority from earlier instead of downgrading.
+    order = [ROUTINE, "soon", SAME_DAY]
+    if state.priority and order.index(state.priority) > order.index(p.level):
+        p.level = state.priority
+        p.reasons = state.priority_reasons + ["kept the higher priority from earlier in the call"]
+        if prev_reason and prev_reason.lower() not in reason.lower():
+            state.reason = f"{prev_reason}; {reason}"
     state.priority, state.priority_reasons = p.level, p.reasons
     state.offered_slots = []
     # Fetch availability right away so the model doesn't need another round trip (lower latency).
@@ -177,7 +186,7 @@ def check_availability(state: S.CallState, preferred_day: Optional[str] = None,
         note = ("Nothing else in the recommended window. Offer these later times, and if this is urgent "
                 "offer to connect them with a nurse.")
     if state.priority == SAME_DAY and not candidates:
-        candidates = _slots(2)[:2]
+        candidates = _slots(4)[:2]   # next couple of business days
         note = (note or "") + ("No same-day openings left. Offer the earliest slot below AND offer to transfer them to "
                 "a nurse or staff member today.")
     preferred = [s for s in candidates if _matches(s, preferred_day, time_of_day)]

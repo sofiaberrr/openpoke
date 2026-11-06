@@ -227,3 +227,11 @@ def test_fake_tool_call_text_is_never_spoken():
                                   "thinking of killing myself"])
 def test_crisis_phrasings(text):
     assert safety.screen(text).kind == "crisis"
+
+
+def test_priority_never_goes_down_during_a_call():
+    st = S.new_session()
+    T.record_intake(st, "refill and a high fever for two days", "prescription_refill")
+    assert st.priority == SAME_DAY
+    T.record_intake(st, "refill", "prescription_refill", severity=2)   # model dropped the fever
+    assert st.priority == SAME_DAY and "fever" in st.reason
