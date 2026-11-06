@@ -204,3 +204,11 @@ def test_promised_transfer_without_tool_still_transfers():
     out = turn(st, "I'm calling about my test results",
                scripted(say("I can't help with test results. Let me transfer you to someone who can.")))
     assert st.stage == S.HANDOFF and out["end_call"]
+
+
+def test_fake_tool_call_text_is_never_spoken():
+    st = S.new_session()
+    out = turn(st, "test results please",
+               scripted(say("Okay, I need to transfer you to staff. {calling transfer_to_human}")))
+    assert "{" not in out["reply"] and "transfer_to_human" not in out["reply"]
+    assert st.stage == S.HANDOFF

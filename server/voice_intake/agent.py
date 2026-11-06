@@ -41,7 +41,16 @@ async def _default_llm(**kwargs: Any) -> Dict[str, Any]:
     return await request_chat_completion(model=_model(), **kwargs)
 
 
+def _clean(text: str) -> str:
+    """Strip things that must never be read aloud: fake tool calls like {calling x}, markdown, tool names."""
+    text = re.sub(r"[{\[][^}\]]*[}\]]", "", text)
+    text = re.sub(r"\b(" + "|".join(T.SCHEMAS) + r")\b", "", text)
+    text = re.sub(r"[*_#`]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _reply(state: S.CallState, text: str, started: float) -> Dict[str, Any]:
+    text = _clean(text)
     state.transcript.append({"role": "agent", "text": text})
     T.recompute_stage(state)
     ms = int((time.time() - started) * 1000)
